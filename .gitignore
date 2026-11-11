@@ -2,4 +2,4 @@ demo.wav
 srv/
 .wrangler/
 dist/
-plugin/build/
+.ref/

@@ -181,7 +181,7 @@ html.fit .main > .pane { padding: 12px 16px 0; overflow: hidden; }
 html.fit .top { padding: 8px 16px; gap: 10px 12px; min-height: 0; }
 html.fit .top button, html.fit .top .bpm-read output, html.fit .pm .pm-btn { height: 30px; }
 html.fit .dev { padding: 10px 16px 8px; }
-/* no 'tb-303 voice' title or rule over the dials (Johnny) */
+/* no title or rule over the dials (Johnny) */
 .dev::before { display: none !important; }
 html.fit .mtabs { margin: 0 -16px -8px; }
 html.fit .mtabs button { height: var(--ctl-h); padding: 0 14px; font-size: var(--fs-m); }
@@ -437,7 +437,7 @@ html.fit .fxpane .fx-row2 #fx-flg { flex: none; padding: 14px 0 0 12px; }
    deepened so it reads on grey like a printed colour filter on a real LCD (grey itself means no accent): the FX On buttons and
    routing blocks, the selected page tab, the play light, the pattern in use and the step being played.
    Every dial and slider, the slide and accent blocks, all text and lines stay in the grey theme's ink (Johnny). data-lcdmode=colour goes on <html>; the
-   page head puts it there unless tb303.lcdMode says mono ---- */
+   page head puts it there unless fmacid.lcdMode says mono ---- */
 :root[data-lcdmode=colour] { --glass: #d3d6cc; --ink: #121410; --panel-rgb: 211 214 204; --ink-rgb: 18 20 16; --shade-rgb: 64 68 58; --light-rgb: 248 250 242;
   --hl1-rgb: 250 252 245; --hl2-rgb: 246 248 240; --dk1-rgb: 44 46 40; --dk2-rgb: 38 40 34; --dk3-rgb: 28 30 24; --accent: #d0600a; }
 :root[data-lcdmode=colour][data-lcd=amber] { --accent: #b58300; }

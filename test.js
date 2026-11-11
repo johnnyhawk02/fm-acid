@@ -1,52 +1,63 @@
-const { TB303Voice, dacVoltage, VT } = require('./tb303-model.js');
-const fs=require('fs');
-const SR=44100;
-// 1. DAC
-console.log('DAC code33', dacVoltage(33,5.333,100e3,200e3).toFixed(4), 'code24', dacVoltage(24,5.333,100e3,200e3).toFixed(4));
-// 2. pitch: count zero crossings of raw saw with filter wide open
-let v=new TB303Voice(SR); v.setKnob('cutoff',1); v.setKnob('envmod',0); v.setKnob('resonance',0);
-v.noteOn(33,false,false);
-const N=SR*2, buf=new Float32Array(N); v.process(buf);
-let zc=0; for(let i=SR;i<N;i++) if(buf[i-1]<0&&buf[i]>=0) zc++; console.log('A key Hz ~', zc);
-// 3. cutoff range
-const w=v.wCut*v.c.V_CUT; console.log('Q10 base span (mV)', (w*1000).toFixed(1), 'res Hz at min', v.vcfResonantHz(0).toFixed(0), 'max', v.vcfResonantHz(w).toFixed(0), 'max+env', v.vcfResonantHz(w+v.wEnv*5).toFixed(0));
-// 4. decay times to 10%
-for(const d of [0,1]){ v=new TB303Voice(SR); v.setKnob('decay',d); console.log('decay knob',d,'T10% (s)', (2.3026*(v.c.R138+v.c.VR6*d)*v.c.C62).toFixed(3)); }
-// 5. render pattern
-v=new TB303Voice(SR);
-v.setKnob('cutoff',0.25); v.setKnob('resonance',0.85); v.setKnob('envmod',0.7); v.setKnob('decay',0.25);
-const pat=[[21,1,0],[33,0,0],[21,0,1],[24,0,0],[36,1,0],[21,0,0],[28,0,1],[33,0,0],[21,1,0],[19,0,0],[31,0,1],[33,1,0],[21,0,0],[45,0,0],[33,0,1],[24,1,0]];
-const step=Math.round(SR*60/130/4), bars=4, out=new Float32Array(step*16*bars);
-let pos=0;
-for(let b=0;b<bars;b++){ if(b==2) v.waveform='square';
- for(let s=0;s<16;s++){const [n,a,sl]=pat[s]; const prevSlide=s>0?pat[s-1][2]:pat[15][2];
-  v.noteOn(n,a,prevSlide); const g=Math.round(step*(sl?1:0.5));
-  v.process(out,pos,pos+g); if(!sl) v.noteOff(); v.process(out,pos+g,pos+step); pos+=step;}}
-let mx=0,nan=0; for(const x of out){ if(!isFinite(x)) nan++; mx=Math.max(mx,Math.abs(x)); }
-console.log('peak',mx.toFixed(3),'nan',nan);
-// speed
-const t0=Date.now(); const tb=new Float32Array(SR*5); v.process(tb); console.log('realtime factor', (5000/(Date.now()-t0)).toFixed(1),'x');
-// wav
-const pcm=Buffer.alloc(44+out.length*2); pcm.write('RIFF',0);pcm.writeUInt32LE(36+out.length*2,4);pcm.write('WAVEfmt ',8);pcm.writeUInt32LE(16,16);pcm.writeUInt16LE(1,20);pcm.writeUInt16LE(1,22);pcm.writeUInt32LE(SR,24);pcm.writeUInt32LE(SR*2,28);pcm.writeUInt16LE(2,32);pcm.writeUInt16LE(16,34);pcm.write('data',36);pcm.writeUInt32LE(out.length*2,40);
-for(let i=0;i<out.length;i++) pcm.writeInt16LE(Math.max(-32767,Math.min(32767,Math.round(out[i]/Math.max(mx,1e-9)*0.9*32767))),44+i*2);
-fs.writeFileSync('demo.wav',pcm);
-// 6. Lexicon 224: measured decay should follow the Mid decay setting on every reverb program
+// Quick checks of the engine (src/synth.js), and demo.wav: the default sound playing the default pattern.
+//   node test.js
+const fs = require('fs'), path = require('path');
+const M = require('./src/synth.js');
+const SR = 48000;
+// the app's default pattern (EXAMPLE in src/js/app/state.js)
+const src = fs.readFileSync(path.join(__dirname, 'src/js/app/state.js'), 'utf8');
+const EXAMPLE = eval(src.match(/const EXAMPLE = (\[[\s\S]*?\]\.map\([\s\S]*?\)\));/)[1]);
+function render(seconds, setup, pattern = EXAMPLE, groove = { shuffle: 0, gate: 0.5 }) {
+  const e = new M.SynthEngine(SR, undefined, 12345);
+  e.message({ type: 'bpm', value: 128 }); e.message({ type: 'groove', ...groove }); e.message({ type: 'pattern', value: pattern });
+  if (setup) setup(e);
+  e.message({ type: 'play', value: true });
+  const N = Math.round(SR * seconds), L = new Float32Array(N), R = new Float32Array(N);
+  const t0 = process.hrtime.bigint();
+  for (let i = 0; i < N; i += 128) e.render(L.subarray(i, Math.min(N, i + 128)), R.subarray(i, Math.min(N, i + 128)));
+  const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+  let peak = 0, sq = 0, bad = 0;
+  for (let i = 0; i < N; i++) { const a = Math.abs(L[i]), b = Math.abs(R[i]); if (!isFinite(a) || !isFinite(b)) bad++; if (a > peak) peak = a; if (b > peak) peak = b; sq += L[i] * L[i] + R[i] * R[i]; }
+  return { L, R, peak, rmsDb: 10 * Math.log10(sq / (2 * N) + 1e-30), bad, speed: seconds * 1000 / ms };
+}
+let fail = 0;
+const check = (ok, text) => { console.log((ok ? 'ok    ' : 'FAIL  ') + text); if (!ok) fail++; };
+
+// 1. pitch: the pattern's A (code 33) is 110 Hz with Tuning in the middle
 {
-  const { Lexicon224, LEX_PROGRAMS, lexParams, COMPONENTS } = require('./tb303-model.js');
-  const c = {}; for (const k in COMPONENTS) c[k] = COMPONENTS[k].v;
-  const knobs = new TB303Voice(SR).knobs;
-  for (let pr = 0; pr < 8; pr++) {
-    const k = { ...knobs, lexprog: pr / 8, lexdepth: 1 }, L = new Lexicon224(SR); L.derive(c, k);
-    const w = SR / 20, en = []; let s = 0, bad = 0;
-    for (let i = 0; i < SR * 6; i++) { L.run(i < 200 ? 0.8 * Math.sin(i * 0.3) : 0); const y = L.L * L.L + L.R * L.R; if (!isFinite(y)) bad++; s += y; if ((i + 1) % w === 0) { en.push(s); s = 0; } }
-    const mx = Math.max(...en), im = en.indexOf(mx), at = (db) => en.findIndex((e, i) => i >= im && 10 * Math.log10(e / mx) < db) * 0.05;
-    const m = L.memoryUse();
-    console.log('224', LEX_PROGRAMS[pr].short.padEnd(13), 'Mid', lexParams(k).mid.toFixed(2), 's  measured RT60', (3 * (at(-25) - at(-5))).toFixed(2), 's  memory', m.words, '/', m.of, bad ? 'NaN!' : '');
+  const v = new M.FmVoice(SR * 2, 1); v.setParam('fType', 0); v.setParam('lB', 0); v.noteOn(33, false, false);
+  const buf = new Float32Array(SR * 2); v.process(buf, 0, buf.length);
+  let zc = 0; for (let i = SR; i < buf.length; i++) if (buf[i - 1] < 0 && buf[i] >= 0) zc++;
+  check(Math.abs(zc / 0.5 - 110) <= 2, `code 33 plays ${(zc / 0.5).toFixed(0)} Hz (110)`);
+}
+// 2. the default sound on the default pattern: four bars, written to demo.wav
+{
+  const r = render(60 / 128 * 16, null);
+  check(!r.bad && r.peak > 0.05 && r.peak <= 1, `default sound: peak ${r.peak.toFixed(3)}, ${r.rmsDb.toFixed(1)} dBFS rms, ${r.speed.toFixed(0)}× real time`);
+  const N = r.L.length, pcm = Buffer.alloc(44 + N * 4);
+  pcm.write('RIFF', 0); pcm.writeUInt32LE(36 + N * 4, 4); pcm.write('WAVEfmt ', 8); pcm.writeUInt32LE(16, 16); pcm.writeUInt16LE(1, 20); pcm.writeUInt16LE(2, 22);
+  pcm.writeUInt32LE(SR, 24); pcm.writeUInt32LE(SR * 4, 28); pcm.writeUInt16LE(4, 32); pcm.writeUInt16LE(16, 34); pcm.write('data', 36); pcm.writeUInt32LE(N * 4, 40);
+  const s16 = (x) => Math.max(-32767, Math.min(32767, Math.round(x * 32767)));
+  for (let i = 0; i < N; i++) { pcm.writeInt16LE(s16(r.L[i]), 44 + i * 4); pcm.writeInt16LE(s16(r.R[i]), 46 + i * 4); }
+  fs.writeFileSync(path.join(__dirname, 'demo.wav'), pcm);
+  console.log('      wrote demo.wav');
+}
+// 3. every factory preset plays its own pattern: no NaN, not silent, not clipping hard
+{
+  const F = JSON.parse(fs.readFileSync(path.join(__dirname, 'factory-presets.json'), 'utf8'));
+  for (const [name, P] of Object.entries(F)) {
+    const slot = P.banks['A' + (P.sel.n + 1)];
+    const r = render(4, (e) => {
+      for (const k in P.sound.knobs) e.message({ type: 'knob', name: k, value: P.sound.knobs[k] });
+      for (const k in P.sound.fm) e.message({ type: 'param', name: k, value: P.sound.fm[k] });
+      for (const k in P.sound.fx) e.message({ type: 'fx', name: k, value: P.sound.fx[k] });
+    }, slot.pattern, { shuffle: slot.shuffle, gate: slot.gate });
+    check(!r.bad && r.rmsDb > -40 && r.peak < 1.5, `factory ${name.padEnd(28)} peak ${r.peak.toFixed(2)}  ${r.rmsDb.toFixed(1)} dBFS rms`);
   }
 }
-// 7. key track: KT 0 switches R_KT out (stock weights); full pot is about 300% of 1 V/oct with the 36K R_KT
+// 4. every FM parameter at both ends of its range: nothing blows up
 {
-  const a = new TB303Voice(SR), b = new TB303Voice(SR); b.setComponent('KT', 1);
-  const track = b.wKt / (VT * Math.LN2);
-  console.log('key track: KT 0 wKt', a.wKt, 'stock wCut', a.wCut === new TB303Voice(SR).wCut, ' KT full tracking', (track * 100).toFixed(1) + '% of 1 V/oct', Math.abs(track - 3.06) < 0.05 ? 'ok' : 'FAIL');
+  let bad = 0;
+  for (const p of M.FM_PARAMS) for (const val of [p.min, p.max]) { const r = render(0.75, (e) => e.message({ type: 'param', name: p.id, value: val })); if (r.bad || r.peak > 4) { bad++; console.log('      ', p.id, val, 'peak', r.peak, 'nan', r.bad); } }
+  check(!bad, `every FM parameter at its lowest and highest: ${bad ? bad + ' misbehave' : 'all finite'}`);
 }
+process.exit(fail ? 1 : 0);

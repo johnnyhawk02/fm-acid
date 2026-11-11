@@ -1,4 +1,4 @@
-// Sound lock for the web engine (tb303-model.js). Renders each scenario with tests/render.js and checks the
+// Sound lock for the web engine (src/synth.js: the FM voice and the effects). Renders each scenario with tests/render.js and checks the
 // output is bit-for-bit what tests/golden.json records, so a refactor can prove it changed nothing you can hear.
 //   node tests/golden.js           check (exit 1 on any difference)
 //   node tests/golden.js --update  record the current renders: do this, and commit golden.json, only when a
@@ -6,7 +6,7 @@
 const fs = require('fs'), path = require('path'), os = require('os'), crypto = require('crypto');
 const { execFileSync } = require('child_process');
 const root = path.join(__dirname, '..'), file = path.join(__dirname, 'golden.json');
-const SCENARIOS = ['tests/scenario.json', 'tests/scenario-44k.json', 'tests/scenario-midi.json'];
+const SCENARIOS = ['tests/scenario-default.json', 'tests/scenario-factory.json'];
 const update = process.argv.includes('--update');
 const want = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {};
 const got = {};

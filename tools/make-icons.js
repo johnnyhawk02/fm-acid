@@ -1,5 +1,5 @@
-// Builds the install icons in icons/ from one SVG design: the app's segmented dial in grey-LCD ink with the orange
-// stop-button square in the middle (the grey + colour look's one accent). Run: node tools/make-icons.js (needs Playwright).
+// Builds the install icons in icons/ from one SVG design: the app's segmented dial in grey-LCD ink with an orange
+// diamond in the middle (the grey + colour look's one accent). Run: node tools/make-icons.js (needs Playwright).
 //   icon.svg / icon-192 / icon-512: rounded dark bezel round a grey glass, transparent corners (favicon, desktop, "any")
 //   maskable-512 / apple-touch-icon: full-bleed glass, dial inside the 80% safe circle (Android masks, iOS rounds itself)
 const fs = require('fs');
@@ -16,11 +16,11 @@ function dial(cx, cy, ro, ri, gapDeg) {
     return `M${pt(a0, ro)}A${ro} ${ro} 0 0 1 ${pt(a1, ro)}L${pt(a1, ri)}A${ri} ${ri} 0 0 0 ${pt(a0, ri)}Z`;
   };
   const all = Array.from({ length: SEGS }, (_, i) => seg(i));
-  const sq = ri * 0.78;
+  const sq = ri * 0.7;
   return `<path d="${all.slice(LIT).join('')}" fill="${INK}" fill-opacity=".13"/>
   <path d="${all.slice(0, LIT).join('')}" fill="${INK}" transform="translate(${ro * 0.025} ${ro * 0.025})" fill-opacity=".17"/>
   <path d="${all.slice(0, LIT).join('')}" fill="${INK}"/>
-  <rect x="${cx - sq / 2}" y="${cy - sq / 2}" width="${sq}" height="${sq}" rx="${sq * 0.12}" fill="${ACCENT}"/>`;
+  <rect x="${cx - sq / 2}" y="${cy - sq / 2}" width="${sq}" height="${sq}" rx="${sq * 0.12}" fill="${ACCENT}" transform="rotate(45 ${cx} ${cy})"/>`;
 }
 
 const glassFill = `<defs><radialGradient id="g" cx="30%" cy="24%" r="95%">

@@ -151,9 +151,9 @@ class DeClick {
 // Messages: knob, param (an FM voice parameter, real units), component, tune, fx, declick, pattern, transpose, bpm, groove (shuffle, gate length), play,
 // seq (the step sequencer on or off) and note (a MIDI note, played straight on the voice while the sequencer is off).
 class SynthEngine {
-  constructor(fs, onStep = () => {}) {
+  constructor(fs, onStep = () => {}, seed) { // seed: tests fix the voice's noise so a render repeats exactly
     this.fs = fs; this.onStep = onStep;
-    this.v = new SynthVoice(fs); this.slew = new ParamSlew(this.v, fs); this.dc = new DeClick(this.v, fs);
+    this.v = new SynthVoice(fs, undefined, seed); this.slew = new ParamSlew(this.v, fs); this.dc = new DeClick(this.v, fs);
     this.playing = false; this.bpm = 128; this.pattern = []; this.shuffle = 0; this.gate = 0.5;
     this.transpose = 0; // semitones the pattern plays up (the root note from MIDI)
     this.step = -1; this.ctr = 0; this.stepLen = 1; this.gateOffAt = -1;

@@ -17,7 +17,7 @@ jobs:
         with: { node-version: 22 }
       # build the page from src/ here, so what goes live always matches the source
       - run: node build.js
-      # Only the app itself goes live, so the source stays private with the repo.
+      # Only the app itself goes live. A new top-level file the page needs has to be added to this cp line.
       - run: mkdir dist && cp -R index.html sw.js manifest.webmanifest icons irs fonts dist/
       # stamp the version shown in the top bar: v<deploy number>, with commit and time in its tooltip
       - run: |
@@ -28,4 +28,4 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           wranglerVersion: '4'
-          command: pages deploy dist --project-name tb303-circuit-model --branch main --commit-dirty=true
+          command: pages deploy dist --project-name fm-acid --branch main --commit-dirty=true
