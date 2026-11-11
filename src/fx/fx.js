@@ -1,150 +1,22 @@
 /*
- * TB-303 component-level voice model
- * -----------------------------------
- * Built from the Roland TB-303 main board schematic (Feb 19, 1982).
- *
- * Every block below is driven by the part values in COMPONENTS. Change a
- * resistor or capacitor and the derived coefficients (time constants, cutoff
- * scaling, ramp slope...) are recomputed by voice.setComponent().
- *
- * Signal path (as on the schematic):
- *   IC9 4174 latch + R74-R90 R-2R ladder (5.333 V ref)  -> pitch CV
- *   IC12 4066 + R93/C35 RC lag                          -> slide
- *   Q26 2SC1583 expo converter + C33 integrator,
- *   Q27/Q28 reset at 12 V                               -> saw 5.5..12 V
- *   R35 || (C10 + R34) lead network into Q8 2SA733 PNP,
- *   R45/C11 self-biased emitter, R36 to the 5.333 V rail -> square 5.3..8 V
- *   Q12 diff pair + Q13-Q23 transistor/diode ladder,
- *   C18 (18n) C19/C24/C26 (33n), Q10/Q11 expo current   -> 4-pole VCF
- *   Q21/Q19 output amp, VR4 + C15 feedback (resonance)
- *   Q38/Q40 env: C62 charged, decays via R138 + VR6     -> VCF envelope
- *   VR7 + D27/R117 + accent cap ("sweep")               -> accent
- *   IC15 BA662A OTA, Q36 / C72 env                      -> VCA
- *
- * The voice runs at 2x oversampling. The VCF is integrated with an implicit
- * trapezoidal step, with each transistor pair's tanh() linearised around the
- * previous state, so it stays stable at any cutoff.
+ * The effects after the voice
+ * ---------------------------
+ * Every effect of the 303 Circuit Model app (github.com/johnnyhawk02/tb303-circuit-model, tb303-model.js), copied
+ * unchanged: the west coast wavefolder, the three drive pedals, the flanger, the delay, the four reverbs and the
+ * ducker, with their program tables and helpers. The Rodent drive was a method of the 303 voice there; here it is its
+ * own class with the same maths. FxChain, at the end, is what the 303 voice did around its circuit: the folder and the
+ * drive slot in either order, the decimator, then the flanger, the two returns and the ducker.
  *
  * Works in Node, in a browser, and inside an AudioWorklet (no DOM use).
  */
 
 const VT = 0.02585; // thermal voltage at ~300 K
-const SQ_SUB = 4;   // Q8 shaper steps per voice sample
-const OUT_TRIM = 0.4; // mixer and line-out gain to digital full scale (set so a typical patch is as loud as before the Q21 stage was modelled)
-const Q20_VBE = 0.65; // Q20 base-emitter drop at about 0.5 mA
-const SQ_BR = 4;    // 2SA733 reverse current gain (only matters in saturation)
 
-// source: 'schematic' = value printed on the 1982 sheet
-//         'rat'       = standard ProCo RAT values
+// The parts of the two units that are modelled from their components.
+// source: 'rat'       = standard ProCo RAT values
 //         'lex'       = Lexicon 224 documentation or published specs
-//         'td3'       = read from the Behringer TD-3 (clone) schematic
-//         'estimate'  = not legible / not printed, chosen to match the
-//                       behaviour the sheet documents (ramp levels, decay times)
+//         'estimate'  = not printed, chosen to match the documented behaviour
 const COMPONENTS = {
-  // --- Pitch CV: IC9 4174 + R74..R90 matched R-2R ladder, 0.1% selected
-  VREF:   { v: 5.333,   unit: 'V', block: 'CV',    source: 'schematic', note: 'IC9/IC10 supply; 5.333/64 = 1/12 V per step', range: [4, 6.5, 'lin'] },
-  R_DAC:  { v: 100e3,   unit: 'Ω', block: 'CV',    source: 'schematic', note: 'R74-R90 series arms' },
-  R2_DAC: { v: 200e3,   unit: 'Ω', block: 'CV',    source: 'schematic', note: 'R78 etc. 200K legs' },
-
-  // --- Slide: IC12 4066 switch around RC lag
-  R93:    { v: 100e3,   unit: 'Ω', block: 'Slide', source: 'schematic', note: 'slide resistor', mod: 'Slide time. The Devil Fish puts a pot here; bigger values give a lazier glide.' },
-  C35:    { v: 0.22e-6, unit: 'F', block: 'Slide', source: 'schematic', note: 'slide cap (.22)', mod: 'Slide time cap. Swapping it is the simple slide-time mod; 1µ gives a long, smeary glide.' },
-
-  // --- VCO
-  C33:    { v: 0.01e-6, unit: 'F', block: 'VCO',   source: 'schematic', note: 'integrator timing cap' },
-  V_LO:   { v: 5.5,     unit: 'V', block: 'VCO',   source: 'schematic', note: 'ramp bottom (scope trace)', range: [3, 8, 'lin'] },
-  V_HI:   { v: 12.0,    unit: 'V', block: 'VCO',   source: 'schematic', note: 'ramp top / reset threshold (scope trace)', range: [9, 15, 'lin'] },
-  F_TUNE: { v: 110,     unit: 'Hz',block: 'VCO',   source: 'schematic', note: 'TM4: 110 Hz at CV 2.75 V (A key)', range: [55, 220, 'log'] },
-  CV_TUNE:{ v: 2.75,    unit: 'V', block: 'VCO',   source: 'schematic', note: 'CV out at A key', range: [1, 4, 'lin'] },
-  VR2:    { v: 50e3,    unit: 'Ω', block: 'VCO',   source: 'schematic', note: 'TUNING 50K(B), ±1 oct assumed', fixed: true },
-
-  // --- Square shaper (Q8 2SA733): the falling ramp drives Q8's base through R35 in parallel with C10 + R34. The
-  // emitter sits on C11, fed from the supply by R45, so it settles wherever the average emitter current balances R45:
-  // that self-bias sets the width. Q8 turns on part way down the ramp, saturates (output = emitter voltage, which sags
-  // as C11 gives up charge) and the reset kicks it off through C10. The collector load goes to the 5.333 V rail.
-  C10:    { v: 0.01e-6, unit: 'F', block: 'Square',source: 'schematic', note: 'C10 (.01): with R34, the fast path from the ramp to Q8 base; it snaps Q8 off at the reset' },
-  R_SQS:  { v: 10e3,    unit: 'Ω', block: 'Square',source: 'schematic', note: 'R34 10K: in series with C10 (TD-3 R190)' },
-  R_SQB:  { v: 100e3,   unit: 'Ω', block: 'Square',source: 'schematic', note: 'R35 100K: ramp to Q8 base, the DC path (TD-3 R191)' },
-  R_SQV:  { v: 22e3,    unit: 'Ω', block: 'Square',source: 'schematic', note: 'R45 22K: supply to Q8 emitter (TD-3 R189)', mod: 'Square width. Lower values feed the emitter more current, so it sits higher and Q8 turns on earlier in the ramp: a wider, louder pulse.' },
-  C_SQE:  { v: 1e-6,    unit: 'F', block: 'Square',source: 'schematic', note: 'C11 (1/50): holds Q8 emitter; it sags while Q8 conducts, which tilts the top of the square (TD-3 C122)' },
-  R_SQC:  { v: 10e3,    unit: 'Ω', block: 'Square',source: 'schematic', note: 'R36 10K: collector load to the 5.333 V rail (VREF), which is the square\'s low level (TD-3 R175)' },
-  V_SQ:   { v: 12,      unit: 'V', block: 'Square',source: 'estimate',  note: 'supply at R45 (the ramp tops out at 12 V)', range: [10, 15, 'lin'] },
-  IS_Q8:  { v: 1e-14,   unit: 'A', block: 'Square',source: 'estimate',  note: '2SA733 saturation current', range: [1e-15, 1e-13, 'log'] },
-  BF_Q8:  { v: 200,     unit: '×', block: 'Square',source: 'estimate',  note: '2SA733 current gain (hFE; P rank is 200 to 400)', range: [50, 600, 'log'] },
-  C_IN:   { v: 1e-6,    unit: 'F', block: 'Square',source: 'td3',       note: 'waveform coupling into the filter, with R_IN and R98 (TD-3 C19 1/50): takes the square\'s DC off' },
-
-  // --- VCF ladder
-  C18:    { v: 0.018e-6,unit: 'F', block: 'VCF',   source: 'schematic', note: 'bottom stage cap (.018)', mod: 'Bottom ladder cap. Changing it toward 33n alters how the resonance sits; a popular experiment, not a standard mod.' },
-  C19:    { v: 0.033e-6,unit: 'F', block: 'VCF',   source: 'schematic', note: 'stage 2 cap (.033)' },
-  C24:    { v: 0.033e-6,unit: 'F', block: 'VCF',   source: 'schematic', note: 'stage 3 cap (.033)' },
-  C26:    { v: 0.033e-6,unit: 'F', block: 'VCF',   source: 'schematic', note: 'top stage cap (.033)' },
-  R_IN:   { v: 100e3,   unit: 'Ω', block: 'VCF',   source: 'td3',       note: 'waveform to Q12 base (TD-3 R27)', mod: 'Filter input level. Lowering it drives the ladder harder for grit, like the Devil Fish overdrive.' },
-  R98:    { v: 2.2e3,   unit: 'Ω', block: 'VCF',   source: 'schematic', note: 'Q12 base to ground (input divider)' },
-  C15:    { v: 1e-6,    unit: 'F', block: 'VCF',   source: 'schematic', note: 'resonance feedback coupling (1/50)' },
-  VR4:    { v: 50e3,    unit: 'Ω', block: 'VCF',   source: 'schematic', note: 'RESONANCE 50K(B)', fixed: true },
-  A_Q21:  { v: 16.5,    unit: '×', block: 'VCF',   source: 'estimate',  note: 'Q21/Q19 loop gain at VR4 max (k_crit = 17)', range: [0, 26, 'lin'], mod: 'Resonance range. The Devil Fish and many TD-3 mods raise feedback so the filter self-oscillates (k above 17 here).' },
-  // expo converter Q10/Q11 summing node
-  R73:    { v: 100e3,   unit: 'Ω', block: 'VCF',   source: 'schematic', note: 'cutoff pot to Q10 base' },
-  R72:    { v: 220e3,   unit: 'Ω', block: 'VCF',   source: 'schematic', note: 'env mod to Q10 base', mod: 'Env mod depth. Lowering it is the usual more-envelope mod for bigger sweeps.' },
-  R63:    { v: 100e3,   unit: 'Ω', block: 'VCF',   source: 'schematic', note: 'accent to Q10 base' },
-  R71:    { v: 2.2e3,   unit: 'Ω', block: 'VCF',   source: 'schematic', note: 'Q10 base to ground' },
-  V_CUT:  { v: 3.3,     unit: 'V', block: 'VCF',   source: 'estimate',  note: 'VR3 wiper span (R47 10K end stop)', range: [0.5, 6, 'lin'], mod: 'Cutoff knob range. Cutoff range mods (common on TD-3s) let the knob go lower and higher.' },
-  KT:     { v: 0,       unit: '%', block: 'VCF',   source: 'estimate',  note: 'KEY TRACK pot (100K B) with click-off switch: buffered pitch CV minus V_KT, through R_KT into Q10 base. Not on a stock 303', range: [0, 1, 'lin'], mod: 'Filter key tracking, as on the TD-3-MO and Devil Fish. Feeds the pitch CV into the cutoff so higher notes open the filter. With the 36K R_KT about a third of the pot is exact 1 V/oct and full is about 300%, so low notes almost vanish, like a TD-3-MO turned up. 0 switches it out, which is the stock 303.' },
-  R_KT:   { v: 36e3,    unit: 'Ω', block: 'VCF',   source: 'estimate',  note: 'key track pot wiper to Q10 base (114K = 100% at full pot, 36K about 300%)', range: [18e3, 300e3, 'log'], mod: 'Key track range. Lower values let the Key track pot go further past 1 V/oct.' },
-  V_KT:   { v: 3.0,     unit: 'V', block: 'VCF',   source: 'estimate',  note: 'key track buffer reference: the note whose cutoff does not move (3 V = the C above the A tuning note); notes below it get darker', range: [1, 4, 'lin'] },
-  I_REF:  { v: 3.1e-6, unit: 'A', block: 'VCF',   source: 'estimate',  note: 'TM3 FREQ trim: ladder current at 0 V', range: [1.55e-6, 6.2e-6, 'log'], mod: 'Filter frequency trimmer (TM3). Sets where the cutoff sits for a given knob position, about one octave either way.' },
-
-  // --- VCF envelope (Q38/Q40/Q39 2SK30)
-  C62:    { v: 1e-6,    unit: 'F', block: 'Env',   source: 'schematic', note: 'envelope cap (1/35)', mod: 'Envelope cap. Scales every decay time together; a smaller cap gives snappier envelopes.' },
-  R138:   { v: 68e3,    unit: 'Ω', block: 'Env',   source: 'schematic', note: 'decay min resistor', mod: 'Sets the shortest decay and the accent decay. The Devil Fish adds separate Normal and Accent decay pots, reaching much shorter decays.' },
-  VR6:    { v: 1e6,     unit: 'Ω', block: 'Env',   source: 'schematic', note: 'ENV.DECAY 1M(A): 200 ms .. 2.5 s', mod: 'Decay pot. Raising it (or adding a series pot) gives longer decays; it is the Normal decay control on a Devil Fish.' },
-  R152:   { v: 100,     unit: 'Ω', block: 'Env',   source: 'td3',       note: 'attack charge path (TD-3 R125 = 100)' },
-  V_ENV:  { v: 10.0,    unit: 'V', block: 'Env',   source: 'td3',       note: 'envelope peak: the decay graph is marked 10V = 100% (TD-3 sheet)' },
-  VR5:    { v: 50e3,    unit: 'Ω', block: 'Env',   source: 'schematic', note: 'ENV.MOD 50K(A)', fixed: true },
-
-  // --- Accent
-  VR7:    { v: 50e3,    unit: 'Ω', block: 'Accent',source: 'schematic', note: 'ACCENT 50K(B)', fixed: true },
-  R117:   { v: 22e3,    unit: 'Ω', block: 'Accent',source: 'schematic', note: 'charge resistor into sweep cap', mod: 'Accent charge resistor. Lower values give a harder, faster accent sweep.' },
-  C_ACC:  { v: 1e-6,    unit: 'F', block: 'Accent',source: 'schematic', note: 'accent sweep cap C13 (1/50); TD-3 C62 1µ', mod: 'Accent sweep cap. The Devil Fish Sweep Speed control changes how fast this charges and bleeds, so stacked accents wah more or less.' },
-  R_ACC:  { v: 47e3,    unit: 'Ω', block: 'Accent',source: 'schematic', note: 'sweep resistor R46 47K; TD-3 R39 47K', mod: 'Accent sweep bleed. Part of the Sweep Speed mod: higher values let consecutive accents build further.' },
-  V_D:    { v: 0.55,    unit: 'V', block: 'Accent',source: 'estimate',  note: 'D27/D28 forward drop' },
-  WOW:    { v: 0,       unit: '×', block: 'Accent',source: 'estimate',  note: 'blend toward the schematic accent sweep: D24 / R_ACC / second gang of VR4 / C_ACC, gang wiper to the filter', range: [0, 1, 'lin'], mod: 'Accent wow. Blends in the sweep as the cleaner schematic draws it: the second gang of the resonance pot taps the sweep cap, so at high resonance accents swell and build over back-to-back accents. 0 keeps the classic accent.' },
-
-  // --- VCA (IC15 BA662A OTA)
-  C67:    { v: 1e-6,    unit: 'F', block: 'VCA',   source: 'td3',       note: 'VCA env cap (TD-3 C67 1/35)', mod: 'VCA envelope cap; scales VCA decay and attack together.' },
-  R49:    { v: 100,     unit: 'Ω', block: 'VCA',   source: 'td3',       note: 'VCA env attack (TD-3 R49)', mod: 'VCA attack. Related to the Devil Fish Soft Attack control, which slows the attack of non-accented notes.' },
-  R_SOFT: { v: 3.3e3,   unit: 'Ω', block: 'VCA',   source: 'estimate',  note: 'soft attack on non-accented notes (about 3 ms with C67)', mod: 'Soft attack. The Devil Fish Soft Attack control varies this; stock 303 normal notes fade in over a few ms, accented notes bypass it and snap in. Lower it for more click, raise it for a slower swell.' },
-  R52:    { v: 1.5e6,   unit: 'Ω', block: 'VCA',   source: 'td3',       note: 'VCA env decay (TD-3 R52 1.5M)', mod: 'VCA (VEG) decay. The Devil Fish VEG Decay control: shorter for gated plucks, longer for drones.' },
-  R_VREL: { v: 4.7e3,   unit: 'Ω', block: 'VCA',   source: 'estimate',  note: 'gate-off discharge through T28' },
-  V_VCA:  { v: 5.0,     unit: 'V', block: 'VCA',   source: 'estimate',  note: 'VCA env peak' },
-  R105:   { v: 22e3,    unit: 'Ω', block: 'VCA',   source: 'td3',       note: 'env to OTA bias pin (Iabc) (TD-3 R105)' },
-  R25:    { v: 22e3,    unit: 'Ω', block: 'VCA',   source: 'td3',       note: 'accent to VCA, with D8 (TD-3 R25)' },
-  R26:    { v: 47e3,    unit: 'Ω', block: 'VCA',   source: 'td3',       note: 'accent to VCA (TD-3 R26, C26 .033)' },
-  // Q21 2SC1583 diff pair reads the top ladder cap through C25/C27; its tail is Q20 with R108, biased from the
-  // 5.333 V rail by R116 into R112/R109 (R113/R114 100K carry only base current). Gain Itail*R110/(4 VT), clipping at
-  // +-Itail*R110/2.
-  R110:   { v: 22e3,    unit: 'Ω', block: 'VCA',   source: 'schematic', note: 'Q21 collector load R110/R111 22K (TD-3 R83/R84)' },
-  R108:   { v: 2.2e3,   unit: 'Ω', block: 'VCA',   source: 'schematic', note: 'Q20 tail emitter resistor (TD-3 R96)', mod: 'Filter output stage current. Lower values give the stage more gain and headroom, so it drives the VCA harder.' },
-  R116:   { v: 10e3,    unit: 'Ω', block: 'VCA',   source: 'schematic', note: 'bias feed from the 5.333 V rail to the Q21/Q20 bias node' },
-  R112:   { v: 10e3,    unit: 'Ω', block: 'VCA',   source: 'schematic', note: 'bias node to Q20 base' },
-  R109:   { v: 10e3,    unit: 'Ω', block: 'VCA',   source: 'schematic', note: 'Q20 base to ground' },
-  C14:    { v: 1e-6,    unit: 'F', block: 'VCA',   source: 'schematic', note: 'VCF output coupling (1/50)' },
-  R85:    { v: 10e3,    unit: 'Ω', block: 'VCA',   source: 'td3',       note: 'output buffer load, HPF with C14 (TD-3 R85)' },
-  C49:    { v: 0.01e-6, unit: 'F', block: 'VCA',   source: 'td3',       note: 'filter to VCA coupling (TD-3 C49)' },
-  R88:    { v: 220e3,   unit: 'Ω', block: 'VCA',   source: 'td3',       note: 'filter to VCA input (TD-3 R88)' },
-  C76:    { v: 0.01e-6, unit: 'F', block: 'VCA',   source: 'td3',       note: 'resonance compensation coupling (TD-3 C76)' },
-  R100:   { v: 100e3,   unit: 'Ω', block: 'VCA',   source: 'td3',       note: 'resonance compensation into VCA (TD-3 R100)' },
-  R101:   { v: 2.2e3,   unit: 'Ω', block: 'VCA',   source: 'td3',       note: 'OTA input to ground (TD-3 R101)' },
-  R_OTA:  { v: 22e3,    unit: 'Ω', block: 'VCA',   source: 'estimate',  note: 'OTA output load' },
-  C38:    { v: 1e-6,    unit: 'F', block: 'VCA',   source: 'schematic', note: 'VCA output coupling (1/50)' },
-  R_OUT:  { v: 50e3,    unit: 'Ω', block: 'VCA',   source: 'schematic', note: 'VOLUME pot VR8 50K(A): the load on C38' },
-
-  // --- Noise: the parts' own hiss, as white voltage noise densities at the points where it enters
-  EN_VCF: { v: 15e-9,   unit: 'V/√Hz', block: 'Noise', source: 'estimate', note: 'ladder input noise: R98 2.2K thermal plus Q12 pair shot noise, referred to the Q12 base. Resonance rings it, but it sits far below the OTA hiss', range: [0, 150e-9, 'lin'] },
-  EN_OTA: { v: 40e-9,   unit: 'V/√Hz', block: 'Noise', source: 'estimate', note: 'BA662 OTA input noise with R101 2.2K: the main hiss, which opens and closes with the VCA', range: [0, 400e-9, 'lin'] },
-  EN_OUT: { v: 0.35e-6,    unit: 'V/√Hz', block: 'Noise', source: 'estimate', note: 'output stage floor (IC15 buffer, mixer): a constant hiss under everything, after the volume pot', range: [0, 3.5e-6, 'lin'] },
-  NOISE:  { v: 0.15,    unit: '×', block: 'Noise', source: 'estimate', note: 'scales every noise source together (0 = silent background)', range: [0, 1, 'lin'], mod: 'Circuit noise. The hiss of the old transistors, OTA and output stage; 0.15 is a light hiss, 1 is a loud worn-out unit, 0 is studio-clean.' },
-
   // --- ProCo RAT
   RAT_CIN: { v: 22e-9,  unit: 'F', block: 'RAT',   source: 'rat', note: 'input coupling into 1M' },
   RAT_RD:  { v: 100e3,  unit: 'Ω', block: 'RAT',   source: 'rat', note: 'DISTORTION pot 100k(A) in the LM308 feedback' },
@@ -161,7 +33,6 @@ const COMPONENTS = {
   RAT_RF:  { v: 1.5e3,  unit: 'Ω', block: 'RAT',   source: 'rat', note: 'fixed filter resistor (in series with the 100k FILTER pot)' },
   RAT_CFLT:{ v: 3.3e-9, unit: 'F', block: 'RAT',   source: 'rat', note: 'filter cap', mod: 'Sets the FILTER range; larger caps make the filter darker overall.' },
   RAT_VS:  { v: 9,      unit: 'V', block: 'RAT',   source: 'rat', note: 'supply; op-amp swings to about ±(V/2 − 1)', range: [6, 18, 'lin'] },
-
   // --- Lexicon 224 (1978, David Griesinger). 'lex' = from Lexicon documentation or published specs.
   LEX_FS:   { v: 20000,  unit: 'Hz', block: '224', source: 'lex', note: 'internal sample rate (20 kHz, Dattorro 1997 and spec sheet)', range: [10000, 48000, 'log'], mod: 'The 224 ran at 20 kHz, which is why it is dark and grainy. Raise it to hear the same programs with modern bandwidth.' },
   LEX_BW:   { v: 9000,   unit: 'Hz', block: '224', source: 'estimate', note: 'anti-alias and reconstruction corner, 6-pole each side (spec: 20 Hz–8 kHz +1/−2 dB)', range: [3000, 20000, 'log'] },
@@ -175,17 +46,6 @@ const COMPONENTS = {
 
 function audioTaper(p) { return p <= 0 ? 0 : Math.pow(p, 2.74); } // 'A' pot, ~15% at mid
 
-// 6-bit R-2R ladder solved by Thevenin reduction from the LSB end.
-function dacVoltage(code, vref, R, R2) {
-  let vth = 0, rth = R2; // termination leg to ground
-  for (let k = 0; k < 6; k++) {
-    const vb = (code >> k) & 1 ? vref : 0;
-    vth = (vth / rth + vb / R2) / (1 / rth + 1 / R2);
-    rth = (rth * R2) / (rth + R2);
-    if (k < 5) rth += R;
-  }
-  return vth;
-}
 
 // ---------------------------------------------------------------------------
 // Lexicon 224 digital reverb (1978, David Griesinger)
@@ -822,7 +682,84 @@ function flushTiny(o, depth) {
   }
 }
 
-const RAT_OS = 2; // the RAT runs at 2x the voice rate (4x the host rate)
+// ---------------------------------------------------------------------------
+// ProCo RAT: an LM308 non-inverting stage limited by gain-bandwidth and slew rate, 1N914 diodes to ground, the filter.
+// It runs RAT_OS times faster than the voice (4x the host rate), because the rail clip, slew limit and diodes turn a
+// loud peak into harmonics far above 20 kHz that otherwise fold back down as inharmonic whine.
+const RAT_OS = 2;
+class ProCoRat {
+  constructor(fs) { // fs: the voice rate (2x the host)
+    this.fs = fs;
+    this.rt = { hin: 0, xin: 0, h1: 0, h2: 0, x1: 0, fb: 0, y: 0, hc: 0, xc: 0, v: 0, f: 0, xp: 0, dco: 0, dci: 0 };
+    const fo = fs * RAT_OS, fc = 22000 / fo, w = 2 * Math.PI * fc, cs = Math.cos(w);
+    this.ratLP = [0.5176, 0.7071, 1.9319].map(Q => { const al = Math.sin(w) / (2 * Q), a0 = 1 + al; return { b0: (1 - cs) / 2 / a0, b1: (1 - cs) / a0, b2: (1 - cs) / 2 / a0, a1: -2 * cs / a0, a2: (1 - al) / a0, x1: 0, x2: 0, y1: 0, y2: 0 }; });
+  }
+  derive(c, k) {
+    const fs = this.fs * RAT_OS, e = (tau) => Math.exp(-1 / (Math.max(tau, 1e-12) * fs));
+    this.c = c;
+    this.ratDcA = Math.exp(-2 * Math.PI * 5 / this.fs); // output coupling: blocks the DC that asymmetric clipping leaves
+    const rd = c.RAT_RD * audioTaper(k.dist) + 1;
+    this.ratRd = rd;
+    this.ratInA = e(c.RAT_CIN * 1e6);
+    this.ratA1 = e(c.RAT_RG1 * c.RAT_CG1); this.ratA2 = e(c.RAT_RG2 * c.RAT_CG2);
+    this.ratFA = e(rd * c.RAT_CF);
+    const comp = 30e-12 / c.RAT_CC;
+    const gHf = 1 + rd * (1 / c.RAT_RG1 + 1 / c.RAT_RG2);
+    this.ratGain = gHf;
+    this.ratK = Math.min(1, 2 * Math.PI * c.RAT_GBW * comp / gHf / fs);
+    this.ratSlew = c.RAT_SR * 1e6 * comp / fs;
+    this.ratRail = Math.max(c.RAT_VS / 2 - 1, 0.5);
+    this.ratCA = e(4.7e-6 * (c.RAT_RCL + 1e3));
+    this.ratN = 1.8 * VT;
+    this.ratIs = 1e-3 / Math.exp(c.RAT_VF / this.ratN);
+    this.ratFltA = e((c.RAT_RF + 100e3 * k.filter) * c.RAT_CFLT);
+    this.ratLevel = audioTaper(k.ratvol) * 6;
+  }
+  run(x) {
+    const s = this.rt, x0 = s.xp; s.xp = x;
+    let y = 0;
+    for (let i = 1; i <= RAT_OS; i++) {
+      let z = this.core(x0 + (x - x0) * (i / RAT_OS));
+      for (const q of this.ratLP) { const o = q.b0 * z + q.b1 * q.x1 + q.b2 * q.x2 - q.a1 * q.y1 - q.a2 * q.y2; q.x2 = q.x1; q.x1 = z; q.y2 = q.y1; q.y1 = o; z = o; }
+      y = z;
+    }
+    s.dco = this.ratDcA * (s.dco + y - s.dci); s.dci = y;
+    return s.dco;
+  }
+  core(x) {
+    const s = this.rt, c = this.c;
+    s.hin = this.ratInA * (s.hin + x - s.xin); s.xin = x;
+    const u = s.hin;
+    // current through the two RC gain legs (inverting input follows u)
+    s.h1 = this.ratA1 * (s.h1 + u - s.x1); s.h2 = this.ratA2 * (s.h2 + u - s.x1); s.x1 = u;
+    const iv = (s.h1 / c.RAT_RG1 + s.h2 / c.RAT_RG2) * this.ratRd;
+    s.fb = iv + this.ratFA * (s.fb - iv);                        // pot || 100p
+    const target = u + s.fb;
+    let dy = (target - s.y) * this.ratK;                         // gain-bandwidth limit
+    if (dy > this.ratSlew) dy = this.ratSlew; else if (dy < -this.ratSlew) dy = -this.ratSlew; // slew limit
+    s.y = Math.max(-this.ratRail, Math.min(this.ratRail, s.y + dy));
+    s.hc = this.ratCA * (s.hc + s.y - s.xc); s.xc = s.y;         // 4.7µ output coupling
+    // diode pair to ground through RAT_RCL: (w - v)/R = 2 Is sinh(v / nVt)
+    const w = s.hc, R = c.RAT_RCL, n = this.ratN, Is = this.ratIs;
+    // Safeguarded Newton: the root lies between 0 and w, so keep it bracketed and bisect whenever a Newton
+    // step would leave the bracket. Plain Newton from the last sample could not follow a fast swing into
+    // the diodes' exponential region in 4 steps and left v volts off, which was heard as spitting and fizz.
+    let lo = w < 0 ? w : 0, hi = w < 0 ? 0 : w;
+    let v = Math.min(hi, Math.max(lo, s.v));
+    for (let i = 0; i < 40; i++) {
+      const t = Math.min(Math.max(v / n, -80), 80), e = Math.exp(t), ei = 1 / e;
+      const f = (w - v) / R - Is * (e - ei), df = -1 / R - Is * (e + ei) / n;
+      if (f > 0) lo = v; else hi = v;
+      let nv = v - f / df;
+      if (!(nv > lo && nv < hi)) nv = 0.5 * (lo + hi);
+      const dv = nv - v; v = nv;
+      if (dv < 1e-7 && dv > -1e-7) break;
+    }
+    s.v = v;
+    s.f = v + this.ratFltA * (s.f - v);                          // FILTER: (1.5k + pot) with 3.3n
+    return s.f * this.ratLevel;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Three more units from published schematics, ported unchanged from Johnny's Shyoy (johnnyhawk02/sh101 cde59c9, v0.11.0):
@@ -1154,17 +1091,23 @@ class Compactor {
   }
 }
 
-class TB303Voice {
+// ---------------------------------------------------------------------------
+// The chain: what the 303 voice did around its circuit. The input is a mono signal at 2x the host rate, at the level of
+// the 303's VCA output (the drives and the folder are calibrated to it).
+//   drive(x)                 one sample at 2x: the folder and the drive slot in the order fxorder picks, then the
+//                            output stage headroom
+//   decimate(x)              the 2x signal through the down filter; keep every second result
+//   out(y, outL, outR, n)    one sample at the host rate: the flanger, the delay and reverb returns (parallel or in
+//                            series, fxret), the ducker keyed from the dry signal, the output soft clip
+class FxChain {
   constructor(sampleRate, components) {
     this.fsOut = sampleRate;
     this.os = 2;
     this.fs = sampleRate * this.os;
-    this.h = 1 / this.fs;
     this.c = {};
     for (const k in COMPONENTS) this.c[k] = (components && k in components) ? components[k] : COMPONENTS[k].v;
-
-    // front panel (0..1)
-    this.knobs = { tuning: 0.5, cutoff: 0.35, resonance: 0.7, envmod: 0.6, decay: 0.3, accent: 0.7, volume: 0.8, dist: 0.5, filter: 0.4, ratvol: 0.5,
+    // the effects' dials (0..1)
+    this.knobs = { dist: 0.5, filter: 0.4, ratvol: 0.5,
       drvtype: 0, dsdist: 0.5, dstone: 0.5, dslevel: 0.5, tsdrive: 0.5, tstone: 0.5, tslevel: 0.5, fldtimbre: 0.5, fldsym: 0.5, fldlevel: 0.5,
       lexprog: 0.125, lexbass: 0.3, lexmid: 0.27, lexxover: 0.443, lextreble: 0.834, lexdepth: 0.5, lexdiff: 0.55, lexpre: 0.2, lexme: 0.5, lexpitch: 0.2, lexmix: 0.5,
       revtype: 0, plateprog: 0.5, platepre: 0.2, platedecay: 0.45, platedamp: 0.6, platebw: 0.75, platelo: 0.35, platediff: 0.88, platemod: 0.5, platemix: 0.5,
@@ -1175,135 +1118,25 @@ class TB303Voice {
       flgman: 0.5, flgdep: 0.5, flgrate: 0.3, flgres: 0.5, flgmode: 0 };
     this.fx = { rat: false, lex: false, dly: false, fold: false, flg: false }; // rat switches the drive slot (RAT, DS-1 or TS808)
     this.bpm = 128;
+    this.rat = new ProCoRat(this.fs);
     this.ds = new BossDS1(this.fs); this.ts = new TubeScreamer(this.fs); this.b259 = new Buchla259(this.fs); this.drvT = 0;
     this.lex = new Lexicon224(sampleRate);
     this.plate = new DattorroPlate(sampleRate); this.spring = new SpringReverb(sampleRate); this.conv = new ConvReverb(sampleRate); this.revT = 0;
     this.dly = new DigitalDelay(sampleRate);
     this.flg = new BF2Flanger(sampleRate);
     this.cmp = new Compactor(sampleRate);
-    this.rt = { hin: 0, xin: 0, h1: 0, h2: 0, x1: 0, fb: 0, y: 0, hc: 0, xc: 0, v: 0, f: 0, xp: 0, dco: 0, dci: 0 };
-    this.waveform = 'saw';
-    // microtuning: an offset per note of the scale (C..B, every octave), in volts on the 1 V/oct CV, so 1 cent = 1/1200 V
-    this.tuneCv = new Float64Array(12);
-
-    // state
-    this.cvTarget = dacVoltage(33, this.c.VREF, this.c.R_DAC, this.c.R2_DAC);
-    this.cv = this.cvTarget;
-    this.slide = false;
-    this.gate = false;
-    this.accentNote = false;
-    this.vSaw = this.c.V_LO;
-    this.sawDelay = this.vSaw; // one-sample delay for polyBLEP
-    this.sq = { s: 0, e: 0, vc: 0, b: 0, col: 0, hp: 0, hpIn: 0 }; // Q8 shaper: ramp in, C11, C10, base, collector, C_IN coupling
-    this.v = new Float64Array(4); // ladder cap voltages
-    this.fbLp = 0;
-    this.envVcf = 0; this.envAttack = 0;
-    this.envVca = 0; this.vcaAttack = 0;
-    this.vAcc = 0; this.vWowC = 0; this.vWow = 0;
-    this.rng = 0x9e3779b9 ^ ((Math.random() * 0x7fffffff) | 0); // per-voice xorshift32 for the noise sources
-    this.hp14 = 0; this.hp14In = 0; this.hp38 = 0; this.hp38In = 0;
-    this.hp49 = 0; this.hp49In = 0; this.hp76 = 0; this.hp76In = 0;
-    this.dc = { z1: 0, z2: 0, z3: 0, z4: 0 };
     this.decim = this._makeDecimator();
-    this._derive();
+    this.derive();
   }
 
-  setComponent(name, value) { if (name in this.c) { this.c[name] = value; this._derive(); } }
+  setComponent(name, value) { if (name in this.c) { this.c[name] = value; this.derive(); } }
   setFx(name, on) { if (name in this.fx) this.fx[name] = !!on; }
-  setKnob(name, value) { if (name in this.knobs) { this.knobs[name] = value; this._derive(); } }
-  // cents: 12 offsets, C first; the next note picks it up (a held note keeps its pitch)
-  setTune(cents) { for (let i = 0; i < 12; i++) { const c = +(cents && cents[i]) || 0; this.tuneCv[i] = c / 1200; } }
+  setKnob(name, value) { if (name in this.knobs) { this.knobs[name] = value; this.derive(); } }
 
-  _derive() {
+  derive() {
     const c = this.c, k = this.knobs;
     this.cmp.derive(k); this.dly.derive(k, this.bpm); this.flg.derive(k);
-    // noise: density * sqrt(bandwidth) at the oversampled rate gives the rms per sample
-    const nb = Math.sqrt(this.fs / 2) * c.NOISE;
-    this.nVcf = c.EN_VCF * nb; this.nOta = c.EN_OTA * nb; this.nOut = c.EN_OUT * nb;
-    this.noiseOn = this.nVcf + this.nOta + this.nOut > 0;
-    // VCO: expo converter calibrated (TM4/TM5) to F_TUNE at CV_TUNE, 1 V/oct.
-    // Ramp slope dV/dt = I/C33, frequency = I / (C33 * (V_HI - V_LO)).
-    this.swing = c.V_HI - c.V_LO;
-    this.iVcoRef = c.F_TUNE * c.C33 * this.swing; // collector current at CV_TUNE
-    this.tuneOct = (k.tuning - 0.5) * 2; // VR2 50K(B) linear, ±1 oct
-    // square shaper: Q8 steps at SQ_SUB times the voice rate (backward Euler); C_IN coupling into the filter
-    { const hs = this.h / SQ_SUB; this.sqG10 = c.C10 / hs; this.sqG11 = c.C_SQE / hs; }
-    this.sqInA = Math.exp(-1 / (c.C_IN * (c.R_IN + c.R98) * this.fs));
-    // slide
-    this.slideA = Math.exp(-1 / (c.R93 * c.C35 * this.fs));
-    // VCF
-    this.C = [c.C18, c.C19, c.C24, c.C26];
-    this.inAtt = c.R98 / (c.R_IN + c.R98);
-    this.kFb = c.A_Q21 * k.resonance; // VR4 linear (B) taper
-    this.fbA = Math.exp(-1 / (c.C15 * c.R98 * this.fs)); // feedback HPF corner (~72 Hz)
-    // Millman sum at Q10 base: G = 1/R
-    // key track (KT > 0 closes the pot's switch): op-amp buffer drives KT * (CV - V_KT) into R_KT
-    const g73 = 1 / c.R73, g72 = 1 / c.R72, g63 = 1 / c.R63, g71 = 1 / c.R71, gKt = c.KT > 0 ? 1 / c.R_KT : 0;
-    const gs = g73 + g72 + g63 + g71 + gKt;
-    this.wCut = g73 / gs; this.wEnv = g72 / gs; this.wAcc = g63 / gs; this.wKt = c.KT * gKt / gs;
-    this.vCutPot = c.V_CUT * k.cutoff;
-    this.envModFrac = audioTaper(k.envmod);
-    // envelopes
-    const rDecay = c.R138 + c.VR6 * audioTaper(k.decay);
-    this.envDecA = Math.exp(-1 / (rDecay * c.C62 * this.fs));
-    this.envDecAccA = Math.exp(-1 / (c.R138 * c.C62 * this.fs)); // IC12 shorts VR6 on accent
-    this.envAtkA = Math.exp(-1 / (c.R152 * c.C62 * this.fs));
-    this.vcaAtkA = Math.exp(-1 / (c.R49 * c.C67 * this.fs));                // accented: fast
-    this.vcaSoftA = Math.exp(-1 / ((c.R49 + c.R_SOFT) * c.C67 * this.fs)); // normal: soft attack
-    this.vcaDecA = Math.exp(-1 / (c.R52 * c.C67 * this.fs));
-    this.vcaRelA = Math.exp(-1 / (c.R_VREL * c.C67 * this.fs));
-    // accent sweep
-    this.accFrac = k.accent; // VR7 linear
-    this.accChgK = 1 / (c.R117 * c.C_ACC * this.fs);
-    this.accDisA = Math.exp(-1 / (c.R_ACC * c.C_ACC * this.fs));
-    // wow: VR7 -> D24 -> R_ACC -> VR4 gang 2 track -> C_ACC; the gang wiper drives the filter. Resonance picks the tap:
-    // low takes the fast end (a sharp accent), high the cap end (a swell that builds over consecutive accents).
-    {
-      const ra = Math.max(c.VR4 * k.resonance, 1), rb = Math.max(c.VR4 * (1 - k.resonance), 1);
-      const rs = c.R_ACC + c.VR7 * k.accent * (1 - k.accent);
-      const gl = 1 / (c.R63 + 1 / (g73 + g72 + g71 + gKt)), gb = 1 / rb, dt = 1 / this.fs;
-      const tap = (gsrc) => { const sum = gsrc + gb + gl; return { a: gsrc / sum, b: gb / sum, tgt: gsrc / (gsrc + gl), k: Math.exp(-dt * gb * (gsrc + gl) / sum / c.C_ACC) }; };
-      this.wowOn = tap(1 / (rs + ra)); this.wowOff = tap(0);
-    }
-    // couplings
-    this.hp14A = Math.exp(-1 / (c.C14 * c.R85 * this.fs));
-    this.hp49A = Math.exp(-1 / (c.C49 * c.R88 * this.fs));
-    this.hp76A = Math.exp(-1 / (c.C76 * c.R100 * this.fs));
-    this.hp38A = Math.exp(-1 / (c.C38 * c.R_OUT * this.fs));
-    this.vinDen = 1 / c.R88 + 1 / c.R100 + 1 / c.R101;
-    // Q21 output stage: tail current from the bias divider, half of it swings each collector
-    this.q21I = Math.max(c.VREF * c.R109 / (c.R116 + c.R112 + c.R109) - Q20_VBE, 0) / c.R108;
-    this.q21Swing = this.q21I * c.R110 / 2;
-    this.vol = audioTaper(k.volume);
-    this._deriveFx();
-  }
-
-  _deriveFx() {
-    const c = this.c, k = this.knobs, fs = this.fs * RAT_OS, e = (tau) => Math.exp(-1 / (Math.max(tau, 1e-12) * fs));
-    // RAT: LM308 non-inverting stage. It runs RAT_OS times faster than the voice, because the rail clip,
-    // slew limit and diodes turn a loud resonant peak into harmonics far above 20 kHz that otherwise fold
-    // back down as inharmonic whine.
-    if (!this.ratLP) {
-      const fc = 22000 / fs, w = 2 * Math.PI * fc, cs = Math.cos(w);
-      this.ratLP = [0.5176, 0.7071, 1.9319].map(Q => { const al = Math.sin(w) / (2 * Q), a0 = 1 + al; return { b0: (1 - cs) / 2 / a0, b1: (1 - cs) / a0, b2: (1 - cs) / 2 / a0, a1: -2 * cs / a0, a2: (1 - al) / a0, x1: 0, x2: 0, y1: 0, y2: 0 }; });
-    }
-    this.ratDcA = Math.exp(-2 * Math.PI * 5 / this.fs); // output coupling: blocks the DC that asymmetric clipping leaves
-    const rd = c.RAT_RD * audioTaper(k.dist) + 1;
-    this.ratRd = rd;
-    this.ratInA = e(c.RAT_CIN * 1e6);
-    this.ratA1 = e(c.RAT_RG1 * c.RAT_CG1); this.ratA2 = e(c.RAT_RG2 * c.RAT_CG2);
-    this.ratFA = e(rd * c.RAT_CF);
-    const comp = 30e-12 / c.RAT_CC;
-    const gHf = 1 + rd * (1 / c.RAT_RG1 + 1 / c.RAT_RG2);
-    this.ratGain = gHf;
-    this.ratK = Math.min(1, 2 * Math.PI * c.RAT_GBW * comp / gHf / fs);
-    this.ratSlew = c.RAT_SR * 1e6 * comp / fs;
-    this.ratRail = Math.max(c.RAT_VS / 2 - 1, 0.5);
-    this.ratCA = e(4.7e-6 * (c.RAT_RCL + 1e3));
-    this.ratN = 1.8 * VT;
-    this.ratIs = 1e-3 / Math.exp(c.RAT_VF / this.ratN);
-    this.ratFltA = e((c.RAT_RF + 100e3 * k.filter) * c.RAT_CFLT);
-    this.ratLevel = audioTaper(k.ratvol) * 6;
+    this.rat.derive(c, k);
     this.ds.derive(k); this.ts.derive(k); this.b259.derive(k);
     this.drvT = Math.max(0, Math.min(2, Math.round((k.drvtype || 0) * 2))); // drive slot: 0 = RAT, 1 = DS-1, 2 = TS808
     // FX routing: fxorder swaps the folder and the drive slot; fxret is how the delay and reverb returns connect
@@ -1317,69 +1150,6 @@ class TB303Voice {
   // the unit on the reverb slot (fx.lex switches it on)
   get rev() { return this.revT === 1 ? this.plate : this.revT === 2 ? this.spring : this.revT === 3 ? this.conv : this.lex; }
 
-  _rat(x) {
-    const s = this.rt, x0 = s.xp; s.xp = x;
-    let y = 0;
-    for (let i = 1; i <= RAT_OS; i++) {
-      let z = this._ratCore(x0 + (x - x0) * (i / RAT_OS));
-      for (const q of this.ratLP) { const o = q.b0 * z + q.b1 * q.x1 + q.b2 * q.x2 - q.a1 * q.y1 - q.a2 * q.y2; q.x2 = q.x1; q.x1 = z; q.y2 = q.y1; q.y1 = o; z = o; }
-      y = z;
-    }
-    s.dco = this.ratDcA * (s.dco + y - s.dci); s.dci = y;
-    return s.dco;
-  }
-
-  _ratCore(x) {
-    const s = this.rt, c = this.c;
-    s.hin = this.ratInA * (s.hin + x - s.xin); s.xin = x;
-    const u = s.hin;
-    // current through the two RC gain legs (inverting input follows u)
-    s.h1 = this.ratA1 * (s.h1 + u - s.x1); s.h2 = this.ratA2 * (s.h2 + u - s.x1); s.x1 = u;
-    const iv = (s.h1 / c.RAT_RG1 + s.h2 / c.RAT_RG2) * this.ratRd;
-    s.fb = iv + this.ratFA * (s.fb - iv);                        // pot || 100p
-    const target = u + s.fb;
-    let dy = (target - s.y) * this.ratK;                         // gain-bandwidth limit
-    if (dy > this.ratSlew) dy = this.ratSlew; else if (dy < -this.ratSlew) dy = -this.ratSlew; // slew limit
-    s.y = Math.max(-this.ratRail, Math.min(this.ratRail, s.y + dy));
-    s.hc = this.ratCA * (s.hc + s.y - s.xc); s.xc = s.y;         // 4.7µ output coupling
-    // diode pair to ground through RAT_RCL: (w - v)/R = 2 Is sinh(v / nVt)
-    const w = s.hc, R = c.RAT_RCL, n = this.ratN, Is = this.ratIs;
-    // Safeguarded Newton: the root lies between 0 and w, so keep it bracketed and bisect whenever a Newton
-    // step would leave the bracket. Plain Newton from the last sample could not follow a fast swing into
-    // the diodes' exponential region in 4 steps and left v volts off, which was heard as spitting and fizz.
-    let lo = w < 0 ? w : 0, hi = w < 0 ? 0 : w;
-    let v = Math.min(hi, Math.max(lo, s.v));
-    for (let i = 0; i < 40; i++) {
-      const t = Math.min(Math.max(v / n, -80), 80), e = Math.exp(t), ei = 1 / e;
-      const f = (w - v) / R - Is * (e - ei), df = -1 / R - Is * (e + ei) / n;
-      if (f > 0) lo = v; else hi = v;
-      let nv = v - f / df;
-      if (!(nv > lo && nv < hi)) nv = 0.5 * (lo + hi);
-      const dv = nv - v; v = nv;
-      if (dv < 1e-7 && dv > -1e-7) break;
-    }
-    s.v = v;
-    s.f = v + this.ratFltA * (s.f - v);                          // FILTER: (1.5k + pot) with 3.3n
-    return s.f * this.ratLevel;
-  }
-
-  // note: 0..63 DAC code (33 = A, 110 Hz)
-  noteOn(code, accent, slide) {
-    code = Math.max(0, Math.min(63, code | 0));
-    this.cvTarget = dacVoltage(code, this.c.VREF, this.c.R_DAC, this.c.R2_DAC) + this.tuneCv[code % 12];
-    const legato = this.gate && slide;
-    this.slide = !!slide;
-    if (!legato) {
-      if (!this.slide) this.cv = this.cvTarget;
-      this.accentNote = !!accent;
-      this.envAttack = 1; // trigger VCF env (gate edge into Q38)
-      this.vcaAttack = 1;
-    }
-    this.gate = true;
-  }
-  setSlide(on) { this.slide = !!on; }
-  noteOff() { this.gate = false; }
-
   _makeDecimator() {
     // 2 cascaded biquads (4th-order Butterworth) at 0.42 * fsOut, running at fs
     const mk = (Q) => {
@@ -1390,207 +1160,30 @@ class TB303Voice {
     return [mk(0.5412), mk(1.3066)];
   }
 
-  _vcfStep(u, Iladder) {
-    // ladder states v[0..3]; branch b0 = input pair diff voltage x,
-    // b1..b3 = differences between stages, b4 = top stage to fixed bases.
-    // Same maths as before, written out without per-sample array allocation (it was most of the voice's CPU).
-    const v = this.v, C = this.C, h2 = this.h / 2, twoVt = 2 * VT, Ih = Iladder / 2, G0 = Iladder / (4 * VT);
-    const k = this.kFb;
-    const uEff = u + k * this.fbLp;           // x = u - k*(v4 - LP(v4)) = uEff - k*v4
-    const v0 = v[0], v1 = v[1], v2 = v[2], v3 = v[3];
-    const b0 = uEff - k * v3, b1 = v0 - v1, b2 = v1 - v2, b3 = v2 - v3, b4 = v3;
-    const T0 = Ih * Math.tanh(b0 / twoVt), T1 = Ih * Math.tanh(b1 / twoVt), T2 = Ih * Math.tanh(b2 / twoVt), T3 = Ih * Math.tanh(b3 / twoVt), T4 = Ih * Math.tanh(b4 / twoVt);
-    const G0_ = Math.abs(b0) > 1e-9 ? T0 / b0 : G0, G1 = Math.abs(b1) > 1e-9 ? T1 / b1 : G0, G2 = Math.abs(b2) > 1e-9 ? T2 / b2 : G0,
-      G3 = Math.abs(b3) > 1e-9 ? T3 / b3 : G0, G4 = Math.abs(b4) > 1e-9 ? T4 / b4 : G0;
-    const C0 = C[0], C1 = C[1], C2 = C[2], C3 = C[3];
-    // A = I - h/2 M (M linearised with feedback folded in), r = v + h/2 (f + B uEff)
-    let a00 = 1 + h2 * G1 / C0, a01 = -h2 * G1 / C0, a02 = 0, a03 = h2 * G0_ * k / C0;
-    let a10 = -h2 * G1 / C1, a11 = 1 + h2 * (G1 + G2) / C1, a12 = -h2 * G2 / C1, a13 = 0;
-    let a20 = 0, a21 = -h2 * G2 / C2, a22 = 1 + h2 * (G2 + G3) / C2, a23 = -h2 * G3 / C2;
-    let a30 = 0, a31 = 0, a32 = -h2 * G3 / C3, a33 = 1 + h2 * (G3 + G4) / C3;
-    let r0 = v0 + h2 * (T0 - T1) / C0 + h2 * (G0_ / C0) * uEff, r1 = v1 + h2 * (T1 - T2) / C1, r2 = v2 + h2 * (T2 - T3) / C2, r3 = v3 + h2 * (T3 - T4) / C3;
-    // Gaussian elimination (well-conditioned, diagonally dominant); zero entries skipped as before
-    let m = a10 / a00;
-    if (m !== 0) { a11 -= m * a01; a12 -= m * a02; a13 -= m * a03; r1 -= m * r0; }
-    m = a21 / a11;
-    if (m !== 0) { a22 -= m * a12; a23 -= m * a13; r2 -= m * r1; }
-    m = a32 / a22;
-    if (m !== 0) { a33 -= m * a23; r3 -= m * r2; }
-    const n3 = r3 / a33;
-    const n2 = (r2 - a23 * n3) / a22;
-    const n1 = (r1 - a12 * n2 - a13 * n3) / a11;
-    const n0 = (r0 - a01 * n1 - a02 * n2 - a03 * n3) / a00;
-    v[0] = n0; v[1] = n1; v[2] = n2; v[3] = n3;
-    // feedback-path HPF (C15) tracked as LP of v4
-    this.fbLp = n3 + this.fbA * (this.fbLp - n3);
-    return n3;
-  }
-
-  // Q8 shaper, one backward-Euler step with ramp voltage S. Nodes: base B, emitter E (on C11), collector C (R36 to
-  // VREF); C10 + R34 is folded into a conductance from S to B. Ebers-Moll PNP, solved by Newton from the last step.
-  _sqStep(S, g10 = this.sqG10, g11 = this.sqG11) {
-    const c = this.c, q = this.sq, IS = c.IS_Q8, bf = 1 / c.BF_Q8, br = 1 / SQ_BR;
-    const g34 = 1 / c.R_SQS, gy = g10 * g34 / (g10 + g34), g35 = 1 / c.R_SQB, g45 = 1 / c.R_SQV, g36 = 1 / c.R_SQC;
-    const sy = S - q.vc, e0 = q.e;
-    let B = q.b, E = q.e, C = q.col;
-    for (let it = 0; it < 50; it++) {
-      const xe = Math.exp(Math.min((E - B) / VT, 40)), xc = Math.exp(Math.min((C - B) / VT, 40));
-      const Icc = IS * (xe - xc), Ibf = IS * bf * (xe - 1), Ibr = IS * br * (xc - 1);
-      const ge = IS * xe / VT, gc = IS * xc / VT;
-      // currents into each node
-      const fB = gy * (sy - B) + g35 * (S - B) + Ibf + Ibr;
-      const fE = g45 * (c.V_SQ - E) - Icc - Ibf - g11 * (E - e0);
-      const fC = Icc - Ibr - g36 * (C - c.VREF);
-      const bE = ge * bf, bC = gc * br, eE = ge * (1 + bf), cC = gc * (1 + br);
-      const a00 = -gy - g35 - bE - bC, a01 = bE, a02 = bC;
-      const a10 = eE - gc, a11 = -g45 - g11 - eE, a12 = gc;
-      const a20 = cC - ge, a21 = ge, a22 = -cC - g36;
-      // J d = -f by Cramer's rule
-      const r0 = -fB, r1 = -fE, r2 = -fC;
-      const det = a00 * (a11 * a22 - a12 * a21) - a01 * (a10 * a22 - a12 * a20) + a02 * (a10 * a21 - a11 * a20);
-      let dB = (r0 * (a11 * a22 - a12 * a21) - a01 * (r1 * a22 - a12 * r2) + a02 * (r1 * a21 - a11 * r2)) / det;
-      let dE = (a00 * (r1 * a22 - a12 * r2) - r0 * (a10 * a22 - a12 * a20) + a02 * (a10 * r2 - r1 * a20)) / det;
-      let dC = (a00 * (a11 * r2 - r1 * a21) - a01 * (a10 * r2 - r1 * a20) + r0 * (a10 * a21 - a11 * a20)) / det;
-      const m = Math.max(Math.abs(dB), Math.abs(dE), Math.abs(dC));
-      if (m > 0.2) { const k = 0.2 / m; dB *= k; dE *= k; dC *= k; } // junction limiting
-      B += dB; E += dE; C += dC;
-      if (m < 1e-9) break;
-    }
-    q.vc = S - (B + gy * (sy - B) / g34); // C10's voltage: S minus the C10/R34 junction
-    q.b = B; q.e = E; q.col = C;
-    return C;
-  }
-  // On a real 303 the shaper runs all the time; here it only runs while the square is picked, so when it comes in it
-  // first runs at least 80 ms (about 4 C11 time constants) and 3 cycles of ramp at the current pitch, in coarse steps
-  // (20 a cycle, so it costs well under a millisecond), then the C_IN coupling starts from its mean over whole cycles.
-  _sqSettle(s1) {
-    const c = this.c, q = this.sq;
-    q.e = c.V_SQ - 3; q.b = s1; q.vc = 0; q.col = c.VREF;
-    const f = this.iVcoRef * Math.pow(2, this.cv - c.CV_TUNE + this.tuneOct) / (c.C33 * this.swing);
-    const hs = 1 / (20 * f), g10 = c.C10 / hs, g11 = c.C_SQE / hs, tail = 20;
-    const n = Math.max(Math.ceil(0.08 * f), 3) * 20, dr = this.swing * f * hs;
-    let r = s1 + (n * dr) % this.swing, sum = 0; // phased so the run ends where the ramp is now
-    if (r > c.V_HI) r -= this.swing;
-    q.s = r;
-    for (let i = 0; i < n; i++) {
-      r -= dr; if (r <= c.V_LO) r += this.swing;
-      const v = this._sqStep(r, g10, g11);
-      if (i >= n - tail) sum += v;
-    }
-    q.s = r; q.hp = 0; q.hpIn = sum / tail;
-  }
-
   // one sample at the oversampled rate
-  _tick() {
-    const c = this.c;
-    // --- slide / CV
-    if (this.slide) this.cv = this.cvTarget + this.slideA * (this.cv - this.cvTarget);
-    else this.cv = this.cvTarget;
-
-    // --- VCO: I = Iref * 2^(CV - CV_TUNE + tune)
-    const I = this.iVcoRef * Math.pow(2, this.cv - c.CV_TUNE + this.tuneOct);
-    const dv = I / c.C33 * this.h;
-    this.vSaw += dv;
-    // polyBLEP around the reset: output is delayed one sample so the sample
-    // before the step can be corrected too.
-    let corrNow = 0;
-    if (this.vSaw >= c.V_HI) {
-      // Q27/Q28 discharge: fast reset, placed with sub-sample accuracy
-      this.vSaw -= this.swing;
-      const ph = Math.min(Math.max((this.vSaw - c.V_LO) / dv, 0), 1); // samples since crossing
-      this.sawDelay -= 0.5 * this.swing * ph * ph;
-      corrNow = 0.5 * this.swing * (1 - ph) * (1 - ph);
-    }
-    const saw0 = this.sawDelay;
-    this.sawDelay = this.vSaw + corrNow;
-    const saw = saw0;
-
-    let wave;
-    if (this.waveform === 'square') {
-      // the real ramp at Q28 falls from V_HI to V_LO and jumps back up (this model's saw rises; the filter can't tell)
-      const s1 = c.V_LO + c.V_HI - saw, q = this.sq;
-      if (!(q.e > 0)) this._sqSettle(s1);
-      let acc = 0;
-      for (let j = 1; j <= SQ_SUB; j++) acc += this._sqStep(q.s + (s1 - q.s) * j / SQ_SUB);
-      q.s = s1;
-      const vout = acc / SQ_SUB; // the substeps averaged: the edges land between samples
-      q.hp = this.sqInA * (q.hp + vout - q.hpIn); q.hpIn = vout;
-      wave = q.hp;
-    } else {
-      this.sq.e = 0; // re-settle when the square comes back
-      wave = saw - (c.V_LO + c.V_HI) / 2;
-    }
-
-    // --- envelopes
-    // VCF env: gate edge charges C62 through R152, then decays via R138+VR6
-    if (this.envAttack > 0) {
-      this.envVcf = c.V_ENV + this.envAtkA * (this.envVcf - c.V_ENV);
-      if (this.envVcf > 0.99 * c.V_ENV) this.envAttack = 0;
-    } else {
-      this.envVcf *= this.accentNote ? this.envDecAccA : this.envDecA;
-    }
-    // VCA env: C67 charges via R49 while gated, decays via R52, released on gate off
-    if (this.gate) {
-      if (this.vcaAttack > 0) {
-        this.envVca = 1 + (this.accentNote ? this.vcaAtkA : this.vcaSoftA) * (this.envVca - 1);
-        if (this.envVca > 0.99) this.vcaAttack = 0;
-      } else this.envVca *= this.vcaDecA;
-    } else this.envVca *= this.vcaRelA;
-    // accent sweep: VCF env * VR7 through D27/R117 into C_ACC, bled by R_ACC
-    const vAccIn = this.accentNote ? this.envVcf * this.accFrac : 0;
-    const drive = vAccIn - c.V_D - this.vAcc;
-    if (drive > 0) this.vAcc += drive * this.accChgK;
-    this.vAcc *= this.accDisA;
-    if (c.WOW > 0 || this.vWowC > 1e-6) {
-      const vs = vAccIn - c.V_D, t = vs > this.wowOff.b * this.vWowC ? this.wowOn : this.wowOff;
-      this.vWow = t.a * vs + t.b * this.vWowC;
-      const tgt = t === this.wowOn ? t.tgt * vs : 0;
-      this.vWowC = tgt + t.k * (this.vWowC - tgt);
-    }
-    const vAccF = c.WOW > 0 ? this.vAcc + c.WOW * (this.vWow - this.vAcc) : this.vAcc;
-
-    // --- VCF control: Millman sum at Q10 base, expo current
-    const vEnvMod = this.accentNote ? 0 : this.envVcf * this.envModFrac;
-    let vb = this.wCut * this.vCutPot + this.wEnv * vEnvMod + this.wAcc * vAccF;
-    if (this.wKt > 0) vb += this.wKt * (this.cv - c.V_KT);
-    const Il = Math.min(c.I_REF * Math.exp(vb / VT), 2e-3);
-
-    // approx. unit gaussian from four uniforms (xorshift32), one per source
-    let nV = 0, nO = 0, nX = 0;
-    if (this.noiseOn) {
-      const g = () => { let a = 0; for (let i = 0; i < 4; i++) { let x = this.rng; x ^= x << 13; x ^= x >>> 17; x ^= x << 5; this.rng = x; a += (x >>> 0) / 4294967296; } return (a - 2) * 1.7320508; };
-      nV = g() * this.nVcf; nO = g() * this.nOta; nX = g() * this.nOut;
-    }
-    const y = this._vcfStep(wave * this.inAtt + nV, Il);
-
-    // --- output amp -> C14 coupling -> OTA VCA
-    const ya = this.q21Swing * Math.tanh(y / (2 * VT)); // Q21 diff pair -> Q19 output buffer
-    this.hp14 = this.hp14A * (this.hp14 + ya - this.hp14In); this.hp14In = ya;
-    const vo = this.hp14;
-    // into the OTA: filter via C49/R88 plus resonance compensation (VR4 wiper) via C76/R100
-    this.hp49 = this.hp49A * (this.hp49 + vo - this.hp49In); this.hp49In = vo;
-    const vr = vo * this.knobs.resonance;
-    this.hp76 = this.hp76A * (this.hp76 + vr - this.hp76In); this.hp76In = vr;
-    const vin = (this.hp49 / c.R88 + this.hp76 / c.R100) / this.vinDen + nO;
-    const Iabc = Math.max(this.envVca * c.V_VCA - 0.6, 0) / c.R105 + Math.max(this.vAcc - 0.6, 0) / (c.R25 + c.R26);
-    const iout = Iabc * Math.tanh(vin / (2 * VT));
-    const vout = iout * c.R_OTA;
-    this.hp38 = this.hp38A * (this.hp38 + vout - this.hp38In); this.hp38In = vout;
-    let o = this.hp38 * this.vol * OUT_TRIM + nX * 4.0; // the output floor hiss keeps its level
+  drive(o) {
     if (this.fxSwap) { // routing: drive slot first, then the folder
-      if (this.fx.rat) o = this.drvT === 1 ? this.ds.run(o) : this.drvT === 2 ? this.ts.run(o) : this._rat(o);
+      if (this.fx.rat) o = this.drvT === 1 ? this.ds.run(o) : this.drvT === 2 ? this.ts.run(o) : this.rat.run(o);
       if (this.fx.fold) o = this.b259.run(o);
     } else {
       if (this.fx.fold) o = this.b259.run(o);                     // Buchla 259 folder, ahead of the drive slot
-      if (this.fx.rat) o = this.drvT === 1 ? this.ds.run(o) : this.drvT === 2 ? this.ts.run(o) : this._rat(o);
+      if (this.fx.rat) o = this.drvT === 1 ? this.ds.run(o) : this.drvT === 2 ? this.ts.run(o) : this.rat.run(o);
     }
     return 0.95 * Math.tanh(o / 0.95); // output stage headroom
+  }
+
+  decimate(x) {
+    for (const s of this.decim) {
+      const y = s.b0 * x + s.b1 * s.x1 + s.b2 * s.x2 - s.a1 * s.y1 - s.a2 * s.y2;
+      s.x2 = s.x1; s.x1 = x; s.y2 = s.y1; s.y1 = y; x = y;
+    }
+    return x;
   }
 
   // the effects after the dry signal y: the reverb and the delay are returns, both ducked by the Compactor keyed
   // from y, summed with y, then the output soft clip. Routed in parallel (both fed from y), or in series: the second
   // one is fed y plus the first one's return (in mono), and both returns are heard.
-  _fxOut(y, out, outR, n) {
+  out(y, out, outR, n) {
     if (this.fx.flg) y = this.flg.run(y); // the flanger, on the synth ahead of the returns and the dry path
     const lex = this.fx.lex ? this.rev : null, dly = this.fx.dly ? this.dly : null;
     let wl = 0, wr = 0;
@@ -1609,182 +1202,10 @@ class TB303Voice {
     if (outR) outR[n] = 0.98 * Math.tanh((y + this.cmp.r * g) / 0.98);
   }
 
-  _decimate(x) {
-    for (const s of this.decim) {
-      const y = s.b0 * x + s.b1 * s.x1 + s.b2 * s.x2 - s.a1 * s.y1 - s.a2 * s.y2;
-      s.x2 = s.x1; s.x1 = x; s.y2 = s.y1; s.y1 = y; x = y;
-    }
-    return x;
-  }
-
   // Decaying filter and envelope states eventually reach subnormal floats, which run many times
   // slower on most CPUs (CPU climbed 3x over 15 s of silence). Snap anything that small to zero once
   // per block. 1e-150 is far below any audible level and far below every component value.
-  _flush() { flushTiny(this, 0); if (this.lex) flushTiny(this.lex, 0); flushTiny(this.plate, 0); flushTiny(this.spring, 0); flushTiny(this.conv, 0); flushTiny(this.dly, 0); flushTiny(this.flg, 0); flushTiny(this.cmp, 0); flushTiny(this.ds.s, 0); flushTiny(this.ts.s, 0); flushTiny(this.b259.s, 0); }
-
-  // out is mono, or the left channel when outR is given
-  process(out, start = 0, end = out.length, outR) {
-    this._flush();
-    const fx = this.fx.lex || this.fx.dly || this.fx.flg;
-    for (let n = start; n < end; n++) {
-      let y = 0;
-      for (let o = 0; o < this.os; o++) y = this._decimate(this._tick());
-      if (fx) this._fxOut(y, out, outR, n);
-      else { out[n] = y; if (outR) outR[n] = y; }
-    }
-  }
-
-  // diagnostics
-  vcfResonantHz(vb) { // linear-theory peak for given base voltage
-    const I = this.c.I_REF * Math.exp(vb / VT);
-    return 1.3838 * (I / (4 * VT)) / (2 * Math.PI * this.c.C19);
-  }
+  flush() { flushTiny(this, 0); flushTiny(this.rat, 0); flushTiny(this.lex, 0); flushTiny(this.plate, 0); flushTiny(this.spring, 0); flushTiny(this.conv, 0); flushTiny(this.dly, 0); flushTiny(this.flg, 0); flushTiny(this.cmp, 0); flushTiny(this.ds.s, 0); flushTiny(this.ts.s, 0); flushTiny(this.b259.s, 0); }
 }
 
-// Knob and part changes glide to their new value (one-pole, ~15 ms) instead of jumping, so turning a
-// control, MIDI CC steps or a preset load do not zipper the sound. This sits outside the circuit:
-// it only decides what value the voice sees each 32-sample tick. Discrete controls switch at once.
-class ParamSlew {
-  constructor(voice, fs, tau = 0.015) { this.v = voice; this.fs = fs; this.tau = tau; this.t = new Map(); }
-  static instant(kind, name) { return name.endsWith('prog') || name === 'revtype' || name === 'drvtype' || name === 'fxorder' || name === 'fxret' || name === 'flgmode' || name.startsWith('LEX_'); }
-  set(kind, name, value) {
-    const v = this.v;
-    if (ParamSlew.instant(kind, name) || !isFinite(value)) { this.t.delete(kind + name); kind === 'k' ? v.setKnob(name, value) : v.setComponent(name, value); return; }
-    const cur = kind === 'k' ? v.knobs[name] : v.c[name];
-    if (cur === undefined) return;
-    this.t.set(kind + name, { kind, name, value, log: kind === 'c' && value > 0 && cur > 0 });
-  }
-  get active() { return this.t.size > 0; }
-  tick(n) {
-    if (!this.t.size) return;
-    const v = this.v, a = 1 - Math.exp(-n / (this.tau * this.fs));
-    for (const [key, e] of this.t) {
-      const obj = e.kind === 'k' ? v.knobs : v.c, cur = obj[e.name];
-      let nx = e.log ? Math.exp(Math.log(cur) + (Math.log(e.value) - Math.log(cur)) * a) : cur + (e.value - cur) * a;
-      if (Math.abs(nx - e.value) <= 1e-4 * Math.max(1e-9, Math.abs(e.value)) || (!e.log && Math.abs(nx - e.value) < 1e-5)) { nx = e.value; this.t.delete(key); }
-      obj[e.name] = nx;
-    }
-    v._derive();
-  }
-}
-
-// De-click: an output stage outside the circuit. The real 303 clicks where the VCA opens in about
-// 0.1 ms (accented notes skip the soft attack) and where a retrigger lands on a ringing tail. The
-// sequencer knows exactly when each retrigger happens, so the output is delayed by a few ms and the
-// level eases to zero and back over `fadeMs` around each retrigger. Between retriggers the signal
-// passes through untouched. Slides (no retrigger) are left alone. Note-offs are optional: the VCA
-// already releases over about 5 ms there, so they are skipped unless `offs` is set.
-class DeClick {
-  constructor(voice, fs, { on = true, fadeMs = 1.5, lookMs = 3, offs = false } = {}) {
-    this.v = voice; this.fs = fs; this.D = Math.max(1, Math.round(lookMs * 1e-3 * fs));
-    this.bufL = new Float32Array(this.D); this.w = 0;
-    this.t = 0; this.ev = []; this.offs = offs; this.on = on; this.setFade(fadeMs);
-    const on0 = voice.noteOn.bind(voice), off0 = voice.noteOff.bind(voice);
-    voice.noteOn = (code, accent, slide) => { if (!(voice.gate && slide)) this.mark(); on0(code, accent, slide); };
-    voice.noteOff = () => { if (voice.gate && this.offs) this.mark(); off0(); };
-  }
-  setFade(ms) { this.F = Math.max(1, Math.min(this.D, Math.round(ms * 1e-3 * this.fs))); }
-  setOn(on) { if (on === this.on) return; this.on = on; this.bufL.fill(0); this.ev.length = 0; }
-  mark() { if (this.on) this.ev.push(this.t); }
-  process(out, start = 0, end = out.length, outR) {
-    const v = this.v;
-    if (!this.on) { v.process(out, start, end, outR); this.t += end - start; return; }
-    // run the voice dry and do the returns here, after the fade, so a retrigger never dips the reverb or delay tails
-    const lex = v.fx.lex, dly = v.fx.dly, flg = v.fx.flg, fx = lex || dly || flg;
-    v.fx.lex = v.fx.dly = v.fx.flg = false; v.process(out, start, end); v.fx.lex = lex; v.fx.dly = dly; v.fx.flg = flg;
-    const D = this.D, F = this.F, L = this.bufL, ev = this.ev;
-    for (let n = start; n < end; n++, this.t++) {
-      let y = L[this.w]; L[this.w] = out[n]; this.w = this.w + 1 === D ? 0 : this.w + 1;
-      // yl/yr belong to time t - D; ease the level around any retrigger within F of it
-      const tt = this.t - D;
-      while (ev.length && ev[0] <= tt - F) ev.shift();
-      if (ev.length) {
-        let g = 1;
-        for (let i = 0; i < ev.length; i++) {
-          const d = Math.abs(tt - ev[i]); if (d < F) { const s = 0.5 - 0.5 * Math.cos(Math.PI * d / F); if (s < g) g = s; }
-        }
-        y *= g;
-      }
-      if (fx) v._fxOut(y, out, outR, n);
-      else { out[n] = y; if (outR) outR[n] = y; }
-    }
-  }
-}
-
-// The player around the voice: parameter slew, de-click, and the step sequencer that walks a pattern.
-// The AudioWorklet and the main-thread fallback both run this, so they sound the same.
-// Messages: knob, component, wave, tune, fx, declick, pattern, transpose, bpm, groove (shuffle, gate length), play,
-// seq (the step sequencer on or off) and note (a MIDI note, played straight on the voice while the sequencer is off).
-class TB303Engine {
-  constructor(fs, onStep = () => {}) {
-    this.fs = fs; this.onStep = onStep;
-    this.v = new TB303Voice(fs); this.slew = new ParamSlew(this.v, fs); this.dc = new DeClick(this.v, fs);
-    this.playing = false; this.bpm = 128; this.pattern = []; this.shuffle = 0; this.gate = 0.5;
-    this.transpose = 0; // semitones the pattern plays up (the root note from MIDI)
-    this.step = -1; this.ctr = 0; this.stepLen = 1; this.gateOffAt = -1;
-    this.seqOn = true; this.held = []; // with the sequencer off: the MIDI notes held down, the last one sounding
-  }
-  // Seq off: a mono MIDI synth. The newest held note sounds; a note pressed while another is held slides to it without
-  // retriggering (as a slide step does), letting go falls back to the note still held. Velocity 100 and up is an accent.
-  // MIDI note 45 (A2) is code 33, 110 Hz, the pattern's A; notes outside the DAC's 64 codes are folded in by octaves.
-  _noteCode(n) { let c = (n | 0) - 12; while (c < 0) c += 12; while (c > 63) c -= 12; return c; }
-  _note(on, n, vel) {
-    const h = this.held, i = h.indexOf(n);
-    if (i >= 0) h.splice(i, 1);
-    if (on) { const legato = h.length > 0; h.push(n); this.v.noteOn(this._noteCode(n), vel >= 100, legato); }
-    else if (i === h.length && h.length) this.v.noteOn(this._noteCode(h[h.length - 1]), false, true); // the note let go was sounding
-    else if (!h.length && i >= 0) this.v.noteOff();
-  }
-  message(m) {
-    const v = this.v;
-    if (m.type === 'knob') this.slew.set('k', m.name, m.value);
-    else if (m.type === 'component') this.slew.set('c', m.name, m.value);
-    else if (m.type === 'wave') v.waveform = m.value;
-    else if (m.type === 'tune') v.setTune(m.value);
-    else if (m.type === 'fx') v.setFx(m.name, m.value);
-    else if (m.type === 'declick') { this.dc.setOn(!!m.on); this.dc.setFade(m.ms); }
-    else if (m.type === 'pattern') this.pattern = m.value;
-    else if (m.type === 'transpose') this.transpose = m.value | 0;
-    else if (m.type === 'bpm') { this.bpm = m.value; v.bpm = m.value; v.dly.derive(v.knobs, m.value); }
-    else if (m.type === 'groove') { this.shuffle = m.shuffle; this.gate = m.gate; }
-    else if (m.type === 'ir') v.conv.setIR(m.id, m.L, m.R);
-    else if (m.type === 'play') { this.playing = m.value; this.step = -1; this.ctr = 0; if (!m.value && this.seqOn) v.noteOff(); }
-    else if (m.type === 'seq') {
-      const on = !!m.value; if (on === this.seqOn) return;
-      this.seqOn = on; this.held = []; this.step = -1; this.ctr = 0; this.gateOffAt = -1; v.noteOff();
-    }
-    else if (m.type === 'note') { if (!this.seqOn) this._note(!!m.on, m.note | 0, m.vel | 0); }
-  }
-  // a 16th note; shuffle lengthens the even steps and shortens the odd ones. Returns its length in samples.
-  _startStep() {
-    const P = this.pattern, n = P.length; if (!n) return 0;
-    this.step = (this.step + 1) % n;
-    const s = P[this.step], prev = P[(this.step - 1 + n) % n];
-    const len = Math.round(this.fs * 60 / this.bpm / 4 * (1 + (this.step & 1 ? -this.shuffle : this.shuffle)));
-    if (s.gate) {
-      this.v.noteOn(s.code + this.transpose, s.accent, prev.gate && prev.slide);
-      this.gateOffAt = s.slide ? -1 : Math.max(1, Math.round(len * this.gate));
-    } else { this.v.noteOff(); this.gateOffAt = -1; }
-    this.onStep(this.step);
-    return len;
-  }
-  // fills out[s..e) (and outR, if given), split into runs at step starts, gate-offs and every 32 samples while slewing
-  render(out, outR, s = 0, e = out.length) {
-    let i = s; const seq = this.playing && this.seqOn;
-    while (i < e) {
-      if (seq && this.ctr <= 0) { this.stepLen = this._startStep() || 1; this.ctr = this.stepLen; }
-      let run = e - i;
-      if (this.slew.active) { run = Math.min(run, 32); this.slew.tick(run); }
-      if (seq) {
-        run = Math.min(run, this.ctr);
-        const elapsed = this.stepLen - this.ctr;
-        if (this.gateOffAt > elapsed) run = Math.min(run, this.gateOffAt - elapsed);
-        else if (this.gateOffAt === elapsed) { this.v.noteOff(); this.gateOffAt = -1; }
-      }
-      this.dc.process(out, i, i + run, outR);
-      i += run; if (seq) this.ctr -= run;
-    }
-  }
-}
-
-if (typeof module !== 'undefined' && module.exports) module.exports = { DigitalDelay, Compactor, DLY_DIVS, dlyDiv, dlyLo, dlyHi, cmpThrDb, cmpMix, cmpRelMs, TB303Voice, ParamSlew, BossDS1, TubeScreamer, Buchla259, PEDAL_PARTS, PEDAL_OS, DeClick, TB303Engine, COMPONENTS, dacVoltage, VT, Lexicon224, LEX_PROGRAMS, lexParams, REV_TYPES, revType, DattorroPlate, PLATE_PROGRAMS, plateParams, SpringReverb, SPRING_PROGRAMS, springParams, ConvReverb, CNV_PROGRAMS, convParams, CNV_IR_GAIN };
+if (typeof module !== 'undefined' && module.exports) module.exports = { FxChain, ProCoRat, DigitalDelay, BF2Flanger, Compactor, DLY_DIVS, dlyDiv, dlyLo, dlyHi, cmpThrDb, cmpMix, cmpRelMs, flgRate, flgMs, BossDS1, TubeScreamer, Buchla259, OsUnit, PEDAL_PARTS, PEDAL_OS, RAT_OS, COMPONENTS, VT, audioTaper, flushTiny, Lexicon224, LEX_PROGRAMS, lexParams, REV_TYPES, revType, DattorroPlate, PLATE_PROGRAMS, plateParams, SpringReverb, SPRING_PROGRAMS, springParams, ConvReverb, CNV_PROGRAMS, convParams, CNV_IR_GAIN };

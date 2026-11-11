@@ -1,0 +1,54 @@
+/* ---- the FM voice: front panel, Operators page, Shape page ----
+   Built from the same parts as the rest: the front dials (.kn), the effect blocks (.fxb), the small dial of the old
+   Mods page, the routing diagram's boxes and wires, and the spacing tokens (--gap-s, --gap-m, --gap-l). */
+
+/* front panel: eleven dials in one row, then the Sound column (a heading over three buttons) */
+.panel, html.fit .panel { grid-template-columns: repeat(11, minmax(0, 1fr)) 96px; gap: var(--gap-s); }
+.sound-kn, html.fit .sound-kn { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: 17px repeat(3, 21px); gap: 3px; align-items: stretch; justify-items: stretch; }
+.sound-kn .name { order: 0; align-self: center; text-align: center; }
+.sound-kn .mini, html.fit .pane .sound-kn .mini, html.fit .sound-kn .mini { width: 100%; min-width: 0; height: 21px; padding: 0 4px; font: var(--fs-s) var(--font-body); white-space: nowrap; }
+
+/* a switch with its label beside it (Fixed, 90° start, Retrig) */
+.fm-sw { display: inline-flex; align-items: center; gap: var(--gap-s); margin-left: auto; font: var(--fs-s) var(--font-body); color: var(--fg); text-transform: lowercase; white-space: nowrap; cursor: pointer; }
+#ops .fm-sw .switch, #shape .fm-sw .switch { width: 34px; min-width: 0; height: 18px; padding: 0; flex: none; }
+.fm-sw .switch .thumb { width: 12px; height: 12px; top: 1px; left: 1px; }
+.fm-sw .switch[aria-checked=true] .thumb { left: 16px; }
+.fm-sw .switch[aria-checked=false] { background: transparent; }
+.fm-sw .switch[aria-checked=false] .thumb { background: var(--ink); }
+
+/* both pages: one column holding their rows; the blocks keep the FX page's dial size and rules */
+html.fit .fxpane.opspane, html.fit .fxpane.shapepane, .fxpane.opspane, .fxpane.shapepane { grid-template-columns: minmax(0, 1fr); gap: 0; }
+html.fit .opspane .fxsub, html.fit .shapepane .fxsub { display: inline; font-size: var(--fs-s); text-transform: lowercase; white-space: nowrap; }
+html.fit #ops .fxb.opb { --kn-w: 50px; }
+html.fit #ops .fxknobs { gap: 4px; }
+
+/* Operators: four columns, a rule, then the algorithm beside the controls for all four */
+#ops { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); row-gap: var(--gap-l); }
+html.fit #ops .opb { padding: 0 12px; }
+html.fit #ops .opb:first-child { padding-left: 0; }
+html.fit #ops .opb:nth-child(4) { padding-right: 0; }
+#ops .opname { min-width: 1.2ch; }
+#ops .fxknobs { justify-content: space-between; }
+html.fit #ops .blk-algo, html.fit #ops .blk-all { border-top: 1px solid var(--rulec); padding-top: var(--gap-l); }
+html.fit #ops .blk-algo { grid-column: 1 / 3; border-left: 0; padding-left: 0; }
+#ops .blk-algo svg { justify-self: center; }
+html.fit #ops .blk-all { grid-column: 3 / 5; padding-right: 0; }
+#ops .blk-all .fxknobs { justify-content: flex-start; gap: var(--gap-m); }
+.route-dia.algo-dia { width: 325px; height: 135px; }
+.algo-dia .rb text { font-size: 15px; }
+/* the carriers are the only filled boxes; a modulator is an outline */
+.algo-dia .rb.on:not(.car) rect { fill: none; stroke-dasharray: none; }
+.algo-dia .rb.on:not(.car) text { fill: var(--ink); }
+[data-lcdmode=colour] .algo-dia .rb.car rect { fill: var(--accent); stroke: var(--accent); }
+
+/* Shape: three rows of blocks, a rule between the rows */
+#shape { display: grid; grid-template-columns: minmax(0, 1fr); }
+.sh-row { display: flex; align-items: stretch; padding: var(--gap-m) 0; border-top: 1px solid var(--rulec); }
+.sh-row:first-child { padding-top: 0; border-top: 0; }
+html.fit .sh-row .fxb { padding: 0 12px; flex: none; }
+html.fit .sh-row .fxb:first-child { padding-left: 0; }
+html.fit .sh-row .fxb:last-child { padding-right: 0; flex: 1; }
+html.fit .shapepane .fxh .seg button { padding: 0 6px; font-size: var(--fs-s); }
+#sh-lfo .fxh { justify-content: flex-start; }
+#sh-lfo .fxh .seg { margin-left: 0; }
+#sh-lfo { grid-template-columns: auto auto; justify-content: start; column-gap: var(--gap-l); align-items: center; }

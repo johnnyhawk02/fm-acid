@@ -9,17 +9,17 @@ if (tbPlugin) {
     if (!m) return;
     if (m.type === 'knob' && m.name in state.knobs && typeof m.value === 'number') {
       if (Math.abs(state.knobs[m.name] - m.value) < 1e-6) return;
-      state.knobs[m.name] = m.value; preview.setKnob(m.name, m.value); drawKnob(m.name);
+      state.knobs[m.name] = m.value; drawKnob(m.name);
       if (m.name === 'dlypp') drawDlyMode();
     } else if (m.type === 'fx' && m.name in state.fx) {
       if (state.fx[m.name] === !!m.value) return;
-      state.fx[m.name] = !!m.value; preview.setFx(m.name, state.fx[m.name]); renderFx();
+      state.fx[m.name] = !!m.value; renderFx();
     } else if (m.type === 'slot' && m.n >= 0 && m.n < 8) { // the DAW's Pattern parameter
       if (m.n !== sel.n) loadSlot('A', m.n);
       return;
-    } else if (m.type === 'wave' && (m.value === 'saw' || m.value === 'square')) {
-      if (state.wave === m.value) return;
-      state.wave = m.value; preview.waveform = m.value; drawWave();
+    } else if (m.type === 'param' && m.name in state.fm && typeof m.value === 'number') { // an FM voice parameter, real units
+      if (Math.abs(state.fm[m.name] - m.value) < 1e-6) return;
+      state.fm[m.name] = fmClean(fmP(m.name), m.value); drawFm(m.name);
     } else return;
     clearTimeout(saveT); saveT = setTimeout(saveSession, 400);
   };
@@ -47,8 +47,8 @@ if (tbPlugin) {
   document.addEventListener('focusin', (e) => send({ type: 'typing', on: textField(e.target) }));
   document.addEventListener('focusout', () => send({ type: 'typing', on: false }));
   for (const k of KNOBS) send({ type: 'knob', name: k.id, value: state.knobs[k.id] });
-  for (const k in state.parts) if (state.parts[k] !== COMPONENTS[k].v) send({ type: 'component', name: k, value: state.parts[k] });
-  send({ type: 'wave', value: state.wave }); sendTune(); sendPattern(); sendGroove();
+  for (const p of FM_PARAMS) sendFm(p.id);
+  sendTune(); sendPattern(); sendGroove();
   for (const n in state.fx) send({ type: 'fx', name: n, value: state.fx[n] });
   sendDeclick();
   send({ type: 'ready' });

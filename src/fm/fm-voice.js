@@ -196,7 +196,7 @@ const FM_SPEC = [
   ['aSus', 0, 1, 0, 'lin', 'sustain'], // the level the amp envelope decays to while the note is held
   ['aRel', 1, 2000, 8, 'exp', 'release'], // after note-off, from wherever the envelope is
   ['aCurve', 0, 1, 0.5, 'lin', 'curve'],
-  ['level', 0, 1, 0.8, 'lin', 'level'],
+  ['level', 0, 1, 0.5, 'lin', 'level'], // set by Randomise and Alter so every sound is about as loud
   // playing it as a synth
   ['slide', 10, 500, 60, 'exp', 'slide'], // ms a legato note takes to arrive (95% of the way)
   ['accent', 0, 1, 0.7, 'lin', 'accent'], // unaccented notes play at velocity 1 - 0.6 * accent, accented ones at 1
@@ -214,7 +214,7 @@ const FM_SPEC = [
   ['vLvl', 0, 1, 0.6, 'lin', 'v lvl'],
   ['vPitch', 0, 1, 0, 'lin', 'v pitch'],
   ['vFm', 0, 1, 0.3, 'lin', 'v fm'],
-  ['vFilt', 0, 1, 0, 'lin', 'v flt'],
+  ['vFilt', 0, 1, 0.4, 'lin', 'v flt'],
 ];
 
 const FM_LFO_DESTS = ['off', 'pitch', 'fm', 'cutoff', 'level', 'pan', 'noise', 'ratio'];

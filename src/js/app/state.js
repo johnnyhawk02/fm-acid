@@ -1,11 +1,7 @@
 const KNOBS = [
-  { id: 'tuning',    name: 'Tuning',    ref: 'VR2 50K(B)', def: 0.5 },
-  { id: 'cutoff',    name: 'Cutoff',    ref: 'VR3',        def: 0.3 },
-  { id: 'resonance', name: 'Reso',      ref: 'VR4 50K(B)', def: 0.82 },
-  { id: 'envmod',    name: 'Env mod',   ref: 'VR5 50K(A)', def: 0.62 },
-  { id: 'decay',     name: 'Decay',     ref: 'VR6 1M(A)',  def: 0.3 },
-  { id: 'accent',    name: 'Accent',    ref: 'VR7 50K(B)', def: 0.75 },
-  { id: 'volume',    name: 'Volume',    ref: 'VR8 50K(A)', def: 0.85 },
+  // the front panel's own two dials; the rest of the panel are FM voice parameters (FM_PARAMS, real units: fm.js)
+  { id: 'tuning',    name: 'Tuning',    ref: '±12 st',     def: 0.5 },
+  { id: 'volume',    name: 'Volume',    ref: 'output',     def: 0.85 },
   // the drive slot (fx.rat switches it on): drvtype picks the pedal, drv says whose dial it is
   { id: 'drvtype',   name: 'Pedal',     ref: 'Rodent/Dist One/Green 808', def: 0, fx: 'rat', hidden: true },
   { id: 'dist',      name: 'Distortion',ref: '100k(A)',    def: 0.5,  fx: 'rat', drv: 'rat' },
@@ -83,41 +79,16 @@ const EXAMPLE = [
 ].map(([code, accent, slide, gate]) => ({ code: code || 21, accent: !!accent, slide: !!slide, gate: !!gate }));
 
 const store = {
-  get(k, d) { try { const v = tbStore.getItem('tb303.' + k); return v ? JSON.parse(v) : d; } catch { return d; } },
-  set(k, v) { try { tbStore.setItem('tb303.' + k, JSON.stringify(v)); } catch {} },
+  get(k, d) { try { const v = tbStore.getItem('fmacid.' + k); return v ? JSON.parse(v) : d; } catch { return d; } },
+  set(k, v) { try { tbStore.setItem('fmacid.' + k, JSON.stringify(v)); } catch {} },
 };
-// v30-v31 briefly used the cleaner schematic's part names (parts version 3); sounds saved then are converted back once
-function unmigrateParts(p) {
-  if (!p || typeof p !== 'object' || Array.isArray(p)) return p;
-  const q = { ...p }, mv = (a, b) => { delete q[a]; if (a in p) q[b] = p[a]; };
-  delete q.R63; delete q.R72; if ('R72' in p) q.R63 = p.R72; if ('R63' in p) q.R72 = p.R63;
-  mv('R46', 'R_ACC'); mv('C13', 'C_ACC'); mv('R35', 'R_SQB'); mv('R36', 'R_SQC'); delete q.TM3; delete q.V_CUT0;
-  if (typeof p.V_CUT === 'number') q.V_CUT = +(p.V_CUT * 3.3 / 10).toPrecision(3);
-  if (typeof p.I_REF === 'number') q.I_REF = +(p.I_REF * 3.1 / 1.82).toPrecision(3);
-  return q;
-}
-function unmigrateTree(o) {
-  if (Array.isArray(o)) o.forEach(unmigrateTree);
-  else if (o && typeof o === 'object') for (const k in o) { if (k === 'parts') o[k] = unmigrateParts(o[k]); else unmigrateTree(o[k]); }
-  return o;
-}
-if (store.get('partsVersion', 0) === 3) {
-  try {
-    for (let i = 0; i < tbStore.length; i++) {
-      const key = tbStore.key(i); if (!key.startsWith('tb303.')) continue;
-      const raw = tbStore.getItem(key); if (!raw || !raw.includes('"parts"')) continue;
-      try { tbStore.setItem(key, JSON.stringify(unmigrateTree(JSON.parse(raw)))); } catch {}
-    }
-  } catch {}
-  store.set('partsVersion', 2);
-}
 const state = {
   knobs: Object.fromEntries(KNOBS.map(k => [k.id, k.def])),
-  wave: 'saw', bpm: 128, fx: { rat: false, lex: false, dly: false, fold: false, flg: false }, shuffle: 0, gate: 0.5,
+  bpm: 128, fx: { rat: false, lex: false, dly: false, fold: false, flg: false }, shuffle: 0, gate: 0.5,
   pattern: store.get('pattern', null) || EXAMPLE.map(s => ({ ...s })),
-  parts: {},
+  fm: Object.fromEntries(FM_PARAMS.map(p => [p.id, p.def])), // the FM voice, every parameter in real units (Hz, ms, 0..1 amounts)
   tune: new Array(12).fill(0), // cents, C..B, every octave (tuning.js)
-  seqs: {}, // per-control step sequencers (ctlseq.js), by control: 'k:cutoff' for a knob, 'p:KT' for a part dial
+  seqs: {}, // per-control step sequencers (ctlseq.js), by control: 'k:dlyfb' for a dial, 'f:fCut' for an FM voice parameter
 };
 // a control's step sequencer: on, 2-64 steps, slew 0-100%, speed (each step 1, 2 ... 128 sixteenths), depth 0-100% of the
 // control's range, and 64 steps, each an offset -1..1 of the depth (in twentieths) from the control's own setting
@@ -128,8 +99,8 @@ function cleanSeqs(x) {
   const out = {};
   if (!x || typeof x !== 'object' || Array.isArray(x)) return out;
   for (const [key, q] of Object.entries(x)) {
-    const m = /^([kp]):(.+)$/.exec(key); if (!m || !q || typeof q !== 'object') continue;
-    if (m[1] === 'k' ? !KNOBS.some(k => k.id === m[2] && !k.hidden) : !(m[2] in COMPONENTS) || COMPONENTS[m[2]].fixed) continue;
+    const m = /^([kf]):(.+)$/.exec(key); if (!m || !q || typeof q !== 'object') continue;
+    if (m[1] === 'k' ? !KNOBS.some(k => k.id === m[2] && !k.hidden) : !(m[2] in FM_P)) continue;
     const vals = Array.isArray(q.vals) ? q.vals : [];
     out[key] = { on: !!q.on, len: Math.max(2, Math.min(CSEQ_MAX, (q.len | 0) || 16)), slew: Math.max(0, Math.min(100, Math.round((+q.slew || 0) / 5) * 5)),
       step: CSEQ_SPEEDS.includes(q.step) ? q.step : 1, depth: typeof q.depth === 'number' ? Math.max(0, Math.min(100, Math.round(q.depth / 5) * 5)) : 50,
@@ -137,17 +108,19 @@ function cleanSeqs(x) {
   }
   return out;
 }
-for (const k in COMPONENTS) state.parts[k] = COMPONENTS[k].v;
-// a part differs from stock (works for parts whose stock value is 0)
-function partChanged(k, v = state.parts[k]) { const d = COMPONENTS[k].v; return Math.abs(v - d) > (d ? 1e-6 * Math.abs(d) : 1e-9); }
+// an FM parameter value made safe: inside its range, whole numbers for the stepped ones
+function fmClean(p, v) { v = Math.min(p.max, Math.max(p.min, v)); return p.curve === 'int' ? Math.round(v) : v; }
+// a sound saved by the 303 Circuit Model app (its dials and part values are the circuit's): its patterns and effects load,
+// its sound does not
+const is303Sound = (x) => !!x && typeof x === 'object' && ((x.knobs && typeof x.knobs === 'object' && 'cutoff' in x.knobs) || 'parts' in x || 'wave' in x);
 function cleanSettings(x) {
-  const out = { knobs: {}, parts: {} };
+  const out = { knobs: {}, fm: {} };
   if (!x || typeof x !== 'object') return out;
+  const old = is303Sound(x); // the 303 app's Tuning and Volume go with its sound
   // sounds saved before the two-dial Compactor (no Amount) load with the house setting: 40%, 20 ms release
   if (x.knobs && typeof x.knobs === 'object' && !('cmpamt' in x.knobs)) x = { ...x, knobs: { ...x.knobs, cmpamt: 0.3, cmprel: 0.5 } };
-  for (const k of KNOBS) { const v = x.knobs?.[k.id]; if (typeof v === 'number' && v >= 0 && v <= 1) out.knobs[k.id] = v; }
-  for (const k in COMPONENTS) { const v = x.parts?.[k]; if (typeof v === 'number' && isFinite(v) && v >= 0 && !COMPONENTS[k].fixed) out.parts[k] = k === 'NOISE' ? Math.min(v, COMPONENTS.NOISE.range[1]) : v; }
-  if (x.wave === 'saw' || x.wave === 'square') out.wave = x.wave;
+  for (const k of KNOBS) { const v = x.knobs?.[k.id]; if (typeof v === 'number' && v >= 0 && v <= 1 && !(old && !k.fx)) out.knobs[k.id] = v; }
+  if (!old) for (const p of FM_PARAMS) { const v = x.fm?.[p.id]; if (typeof v === 'number' && isFinite(v)) out.fm[p.id] = fmClean(p, v); }
   if (x.fx && typeof x.fx === 'object') out.fx = { rat: !!x.fx.rat, lex: !!x.fx.lex, dly: !!x.fx.dly, fold: !!x.fx.fold, flg: !!x.fx.flg };
   if (typeof x.bpm === 'number' && x.bpm >= 60 && x.bpm <= 200) out.bpm = Math.round(x.bpm);
   if (Array.isArray(x.pattern) && x.pattern.length >= 1 && x.pattern.length <= 64) out.pattern = x.pattern.map(st => ({
@@ -158,22 +131,19 @@ function cleanSettings(x) {
   return out;
 }
 function snapshot() {
-  const parts = {};
-  for (const k in COMPONENTS) if (!COMPONENTS[k].fixed && partChanged(k)) parts[k] = state.parts[k];
-  return { knobs: { ...state.knobs }, parts, ...(state.tune.some(c => c) && { tune: [...state.tune] }), ...(Object.keys(state.seqs).length && { seqs: JSON.parse(JSON.stringify(state.seqs)) }), wave: state.wave, fx: { ...state.fx }, bpm: state.bpm, shuffle: state.shuffle, gate: state.gate, pattern: state.pattern.map(st => ({ ...st })) };
+  return { knobs: { ...state.knobs }, fm: { ...state.fm }, ...(state.tune.some(c => c) && { tune: [...state.tune] }), ...(Object.keys(state.seqs).length && { seqs: JSON.parse(JSON.stringify(state.seqs)) }), fx: { ...state.fx }, bpm: state.bpm, shuffle: state.shuffle, gate: state.gate, pattern: state.pattern.map(st => ({ ...st })) };
 }
 { // restore last session
   const sess = cleanSettings(store.get('session', null));
-  Object.assign(state.knobs, sess.knobs); Object.assign(state.parts, sess.parts);
+  Object.assign(state.knobs, sess.knobs); Object.assign(state.fm, sess.fm);
   if (sess.fx) state.fx = { rat: !!sess.fx.rat, lex: !!sess.fx.lex, dly: !!sess.fx.dly, fold: !!sess.fx.fold, flg: !!sess.fx.flg };
   if (sess.tune) state.tune = sess.tune;
   if (sess.seqs) state.seqs = sess.seqs;
-  if (sess.wave) state.wave = sess.wave; if (sess.bpm) state.bpm = sess.bpm; if (sess.pattern) state.pattern = sess.pattern;
+  if (sess.bpm) state.bpm = sess.bpm; if (sess.pattern) state.pattern = sess.pattern;
   if (sess.shuffle != null) state.shuffle = sess.shuffle; if (sess.gate != null) state.gate = sess.gate;
 }
 let saveTimer = 0;
 function saveSession() { clearTimeout(saveTimer); saveTimer = setTimeout(() => store.set('session', snapshot()), 300); }
-const preview = new TB303Voice(44100); // main-thread copy for derived readouts
 
 let ctx = null, node = null, analyser = null, fallback = null;
 // the deploy stamps the version; a local build shows 'dev'

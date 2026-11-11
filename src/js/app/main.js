@@ -1,7 +1,6 @@
 // ---------- main tabs ----------
 const mtabs = document.getElementById('mtabs');
 function showPane(name, focus) {
-  if (name === 'rat' || name === 'lex') name = 'fx'; // the RAT and 224 tabs became one
   if (!document.getElementById('pane-' + name)) name = 'seq';
   for (const b of mtabs.querySelectorAll('[role=tab]')) { const on = b.dataset.pane === name; b.setAttribute('aria-selected', on); b.tabIndex = on ? 0 : -1; if (on && focus) b.focus(); }
   for (const p of document.querySelectorAll('.main > .pane')) p.hidden = p.id !== 'pane-' + name;
@@ -15,4 +14,4 @@ mtabs.addEventListener('keydown', (e) => {
 });
 showPane(store.get('mainTab', 'seq'));
 
-renderFx(); renderSeq(); renderBank(); renderFrontMods();
+renderFx(); renderSeq(); renderBank();

@@ -1,8 +1,8 @@
-// AudioWorklet processor: the shared TB303Engine (from the model, loaded into the worklet first) on the audio thread
-class TB303Processor extends AudioWorkletProcessor {
+// AudioWorklet processor: the shared SynthEngine (src/synth.js, loaded into the worklet first with the voice and the effects) on the audio thread
+class SynthProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
-    this.engine = new TB303Engine(sampleRate, (step) => this.port.postMessage({ type: 'step', step }));
+    this.engine = new SynthEngine(sampleRate, (step) => this.port.postMessage({ type: 'step', step }));
     this.port.onmessage = (e) => this.engine.message(e.data);
   }
   process(inputs, outputs) {
@@ -12,4 +12,4 @@ class TB303Processor extends AudioWorkletProcessor {
     return true;
   }
 }
-registerProcessor('tb303', TB303Processor);
+registerProcessor('fmacid', SynthProcessor);
