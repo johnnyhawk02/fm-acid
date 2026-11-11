@@ -1,6 +1,6 @@
 // Offline support: the page is fetched fresh when online (so updates arrive) and served from cache when not.
 // Everything else (icons, manifest, fonts) is cache-first and stored on first use.
-const CACHE = 'tb303-v6';
+const CACHE = 'fmacid-v1';
 // The page is cached under './' only: some hosts (Cloudflare Pages) 308-redirect /index.html to /, and a
 // redirected response cannot be served for a navigation.
 const CORE = ['./', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png', './icons/icon.svg', './fonts/VT323-Regular.ttf'];

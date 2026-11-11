@@ -1,7 +1,8 @@
 name: Checks
 # Fast checks on every push and pull request:
 #  - index.html is what `node build.js` makes from src/ (commit it with every src/ change)
-#  - the web engine still renders bit-for-bit what tests/golden.json records (see tests/golden.js)
+#  - the engine's quick checks pass (test.js) and it still renders bit-for-bit what tests/golden.json records (tests/golden.js)
+#  - the FM voice still matches fm/dm sample for sample (tests/bitmatch.mjs) and the effects still match the 303 app's (tests/fx.js)
 on:
   push:
   pull_request:
@@ -17,5 +18,16 @@ jobs:
         with: { node-version: 22 }
       - name: index.html is up to date with src/
         run: node build.js && git diff --exit-code --stat index.html
+      - name: engine checks
+        run: node test.js
       - name: sound is unchanged (golden renders)
         run: node tests/golden.js
+      # the two apps this one is built from, at the commits it was built from
+      - uses: actions/checkout@v4
+        with: { repository: johnnyhawk02/fm-drum-machine, ref: 0e26d1b28e7a9ae02befb97b701e20e3351045d1, path: .ref/fm-drum-machine }
+      - uses: actions/checkout@v4
+        with: { repository: johnnyhawk02/tb303-circuit-model, ref: dfaf9ec932854fc1d0ad1d5849fa044c566c577b, path: .ref/tb303-circuit-model }
+      - name: FM voice matches fm/dm
+        run: node tests/bitmatch.mjs .ref/fm-drum-machine
+      - name: effects match the 303 app
+        run: node tests/fx.js .ref/tb303-circuit-model

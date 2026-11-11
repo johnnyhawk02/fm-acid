@@ -1,38 +1,39 @@
-# Developing 303 Circuit Model
+# Developing FM Acid
 
-Notes for working on the code. The user guide is [README.md](README.md). Product names below describe the circuits that were modelled; the app is not affiliated with their makers (see the README).
+Notes for working on the code. The user guide is [README.md](README.md). Product names below describe the circuits the effects were modelled on; the app is not affiliated with their makers (see the README).
 
-- `src/js/app/generate.js`: Generate and Refill make their patterns from scratch (a scale, a rhythm cell, slides and accents), then vary each bar. No stored patterns.
-- `fonts/`: VT323 (SIL OFL, `fonts/OFL.txt`), served by the site and bundled in the plug-in, so nothing loads from Google.
-- `install.sh` / `install.ps1`: the plug-in installers the release notes point to (curl on macOS and Linux, PowerShell on Windows). `TB303_BASE=file:///dir bash install.sh` installs from a local folder of zips for testing.
-- `.github/workflows/plugin.yml`: builds the plug-in for macOS (VST3 + AU), Windows and Linux after every deploy and publishes release `v<N>`, N being the web app's version.
+FM Acid is two earlier apps of Johnny's put together: the screen, sequencer and effects of his acid bass synth app (github.com/johnnyhawk02/tb303-circuit-model, the first commit here is a copy of it), and one FM voice from his FM drum machine fm/dm (github.com/johnnyhawk02/fm-drum-machine) as the sound engine.
 
 ## Files
-- `tb303-model.js`: the voice (`TB303Voice`) and its parts table (`COMPONENTS`). It has no dependencies and runs in Node, in a browser, or in an AudioWorklet.
-- `tb303-model.js` also has `TB303Engine`, the player around the voice (knob slew, de-click, the step sequencer). The AudioWorklet and the main-thread fallback both run it.
-- `src/`: the page source. `src/index.html` is the markup with slots; `src/css/` holds the styles by area, `src/js/worklet.js` the AudioWorklet wrapper, and `src/js/app/` the app by feature (sequencer, banks, knobs, parts, presets, MIDI and so on).
-- `build.js`: `node build.js` fills the slots in `src/index.html` with the CSS, the model, the worklet, and the app code, and writes the single-file `index.html` that gets deployed. Edit `src/`, never `index.html`.
-- `test.js`: sanity checks (DAC voltages, 110 Hz at the A key, filter range, decay times) and renders `demo.wav`.
-- `factory-presets.json`: the Factory presets in the Preset menu, each a whole project (sound, effects, the 8 pattern slots and chain) in the format Export saves. `node build.js` puts it in the page. Its format is the `projectPresets` map of the file the Preset menu's Export all saves, so presets can be copied straight across.
-- `icons/`: the install icons and favicon, all drawn by `node tools/make-icons.js` (the segmented dial in grey-LCD ink with the orange stop square). Edit the script and rerun it rather than editing the PNGs.
-- `tests/golden.js`: the sound lock. It renders the two scenarios in `tests/` (`tests/render.js`) with the engine and checks they are bit-for-bit what `tests/golden.json` records, so a refactor can prove it changed nothing. When a change to the sound is meant, run `node tests/golden.js --update` and commit `tests/golden.json` with it.
-- CI (`.github/workflows/check.yml`) runs on every push: `index.html` must match what `node build.js` makes, and the golden renders must match. The deploy builds `index.html` itself.
-- `calib.js`: works out the ladder's self-oscillation gain (k = 17) and its resonance-frequency factor.
+- `src/fm/fm-voice.js`: the FM voice (`FmVoice`) and its parameter table (`FM_PARAMS`, every parameter in real units). fm/dm's `dsp.js`, `params.js` and `voice.js` in one plain script, MIT licensed like fm/dm (the header says so; keep it). No dependencies, no `import`: it runs in Node, a browser or an AudioWorklet. No third-party code goes in this file.
+- `src/fx/fx.js`: the effects (`FxChain`: wavefolder, the three drive pedals, flanger, delay, the four reverbs, ducker, routing), each in its own class, and their parts table (`COMPONENTS`).
+- `src/synth.js`: `SynthVoice` (the FM voice at 2× the host rate into the effects chain), `ParamSlew`, `DeClick` and `SynthEngine`, the player around the voice (the step sequencer, or MIDI notes with Seq off). The AudioWorklet and the main-thread fallback both run it. `SYNTH_LEVEL` matches the FM voice's level into the effects to what they were calibrated for (`node tools/level.js /path/to/tb303-circuit-model` works it out; rerun it if the default sound changes).
+- `src/`: the page source. `src/index.html` is the markup with slots; `src/css/` holds the styles by area (`fm.css` is the front panel and the Operators and Shape pages), `src/js/worklet.js` the AudioWorklet wrapper, and `src/js/app/` the app by feature (sequencer, banks, knobs, presets, MIDI and so on; `fm.js`, `voice.js`, `ops.js`, `shape.js`, `soundgen.js` and `sound.js` are the FM voice's controls).
+- `build.js`: `node build.js` fills the slots in `src/index.html` with the CSS, the three engine scripts, the worklet and the app code, and writes the single-file `index.html` that gets deployed. Edit `src/`, never `index.html`, and commit `index.html` with every `src/` change.
+- `src/js/app/generate.js`: Generate and Refill make their patterns from scratch (a scale, a rhythm cell, slides and accents), then vary each bar. No stored patterns.
+- `factory-presets.json`: the Factory presets in the Preset menu, each a whole project (sound, effects, the 8 pattern slots and chain) in the format Export saves. Written by `node tools/make-presets.js /path/to/tb303-circuit-model`: the FM sounds are in that script by hand, the patterns come from Generate, the names from the namer and the effects from the earlier app's factory presets. `node build.js` puts the file in the page.
+- `icons/`: the install icons and favicon, all drawn by `node tools/make-icons.js` (the segmented dial in grey-LCD ink with an orange diamond). Edit the script and rerun it rather than editing the PNGs.
+- `fonts/`: VT323 (SIL OFL, `fonts/OFL.txt`), served by the site, so nothing loads from Google.
+- `sw.js`: offline support. Bump `CACHE` when a cached file other than the page changes.
 
-## What's modelled
-- **Pitch CV:** a 6-bit R-2R ladder (100k/200k) from 5.333 V, which gives 1/12 V per step.
-- **Slide:** an RC lag through R93 and C35.
-- **VCO:** an exponential current charges C33 from 5.5 V to 12 V, then resets. The reset is smoothed with a polyBLEP.
-- **Square:** the falling ramp drives the Q8 2SA733 PNP through R35 in parallel with C10 + R34. Q8 is an Ebers-Moll transistor solved by Newton each step, its emitter self-biases on C11 through R45, and the collector load goes to the 5.333 V rail, so the width, the 5.3 to 9 V swing and the sagging top all come from the circuit.
-- **VCF:** the 4-pole transistor/diode ladder with an 18n bottom cap and 33n caps above it, and a tanh law for each transistor pair. It is solved with an implicit trapezoidal step at 2× oversampling. Resonance feedback is high-passed by C15.
-- **Envelopes:** the filter envelope charges C62 and decays through R138 + VR6 (200 ms to 2.5 s). On accented notes VR6 is shorted and the accent sweep cap (1µ/47k) charges.
-- **VCA:** an OTA fed through C49/R88. The resonance pot wiper is also mixed in through C76/R100 to compensate for lost bass.
-- **Noise:** white voltage noise at the ladder input (EN_VCF), the OTA input (EN_OTA, the main hiss, which opens and closes with the VCA) and the output stage (EN_OUT, a constant floor). NOISE scales them all from 0 (silent) to 0.15 (the default: hiss around -80 dBFS under notes, -91 dBFS idle).
+## Tests
+- `node test.js`: quick checks (110 Hz at the A key, the default sound, every factory preset, every FM parameter at both ends of its range) and `demo.wav`, the default sound playing the default pattern.
+- `node tests/golden.js`: the sound lock. It renders the two scenarios in `tests/` (`tests/render.js`: the default sound with things changing under it, and one factory preset) and checks they are bit-for-bit what `tests/golden.json` records, so a refactor can prove it changed nothing. When a change to the sound is meant, run `node tests/golden.js --update` and commit `tests/golden.json` with it.
+- `node tests/bitmatch.mjs /path/to/fm-drum-machine`: the FM voice, with its new controls at their neutral settings, against fm/dm's own voice, sample for sample.
+- `node tests/fx.js /path/to/tb303-circuit-model`: the effects chain against the earlier app's code, sample for sample.
+- CI (`.github/workflows/check.yml`) runs all of these on every push, and checks `index.html` matches what `node build.js` makes. `.github/workflows/cloudflare.yml` deploys `main` to Cloudflare Pages (project `fm-acid`); a new top-level file the page needs has to be added to its `cp` line.
 
-Each part's `source` field is `schematic`, `td3` or `estimate`.
+## The voice
+A digital FM design of its own: it models no hardware.
+- **Operators:** four sine operators A to D in eight algorithms (`FM_ALG_MOD`, `FM_ALG_CAR`). Each has a ratio (or, switched to Fixed, its own frequency whatever note plays), level, attack and decay. Operator D has feedback. FM sets how hard the modulators drive, FM decay stretches or shrinks every modulator's decay, FM end is the level they fall to.
+- **Pitch:** the pattern's note (code 33 = A = 110 Hz) × the Tuning dial (±12 semitones) × the Tuning page's cents for that note. A slide step glides to the next note in log frequency over Slide time (10 to 500 ms) without retriggering the envelopes.
+- **Around the operators:** a pitch envelope, a click and a noise layer, a state-variable filter (off, LP, BP, HP) with drive, its own envelope and key track (the Key track dial's 100% follows the keyboard exactly), an amp envelope with sustain and release, a bit crusher and an LFO with two destinations.
+- **Accent:** an accented step plays at full velocity, an unaccented one at `1 - 0.6 × Accent`. The four Velocity dials on the Shape page set what velocity changes (level, pitch envelope, FM, filter).
+- **Sound column:** Randomise, Alter and Undo (`soundgen.js`, `sound.js`), ported from fm/dm's randomiser and auto-level.
+- **What was left out of fm/dm's voice:** the drum-machine parts (crossfeed inputs, sends, pan, trim, the second amp decay, noise bursts).
 
 ## Effects
-After the VCA there is an optional effect, modelled from its parts:
+After the voice come the effects, unchanged from the acid bass synth app this one grew from (`tests/fx.js` checks them against that app's code, sample for sample):
 - **ProCo RAT:** an LM308 non-inverting stage limited by gain-bandwidth and slew rate (set by the 30p compensation cap). It then has 1N914 clipping diodes to ground, solved with Newton's method each sample, and the 1.5k + 100k / 3.3n filter.
 - **Lexicon 224 (1978, David Griesinger):** a stereo reverb after the RAT. It runs on its own 20 kHz clock behind 6-pole anti-alias and reconstruction filters, with 12-bit gain-ranging converters (+24 dB), a zero-order-hold DAC, an input transformer, and 16-bit words in one shared 32K-word circular delay memory. Programs that don't fit are shrunk, as on the hardware. It has the nine v4.4 programs and the 224's controls: Bass and Mid decay (0.6–70 s) split at Crossover, Treble decay, Depth (0–71), Diffusion (0–63), each program's Predelay range, and Mode Enhancement (random tap modulation, Amount and Pitch). In Chorus A, eight voices wander at random and the first four knobs set the voice-pair levels.
   - **What is documented:** the program names, control ranges, sample rate, converters, word size and memory (the Lexicon v4.4 manual, the spec sheet, and Dattorro 1997, footnote 5).

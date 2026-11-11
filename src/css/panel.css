@@ -4,7 +4,7 @@
   font: 16px var(--font-body); color: var(--fg); background: transparent; border-bottom: 1px solid var(--ink); border-radius: 4px 4px 0 0; }
 .dev::after, .main > .pane::after { content: ""; position: absolute; left: 9px; top: 7px; width: 10px; height: 10px; border-radius: 50%; background: var(--on); }
 
-/* TB-303 voice: waveform switch, the front dials, then components (filter trim, randomise, undo) */
+/* the voice: the front dials (laid out in fm.css) */
 .panel { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)) minmax(132px, 1.3fr); gap: 10px; align-items: start; }
 .wave-kn { align-content: start; }
 .wave-kn .switch { align-self: center; margin: 14px 0 12px; }

@@ -128,7 +128,7 @@ function drawFlgMode() {
 document.getElementById('flg-mode').addEventListener('click', (e) => { const b = e.target.closest('button[data-m]'); if (b) setKnob('flgmode', +b.dataset.m); });
 dlyModeEl.addEventListener('click', (e) => { const b = e.target.closest('button[data-m]'); if (b) { setKnob('dlypp', +b.dataset.m); drawDlyMode(); } });
 for (const n of FX_UNITS) document.getElementById('fx-' + n + '-on').onclick = () => {
-  state.fx[n] = !state.fx[n]; preview.setFx(n, state.fx[n]); send({ type: 'fx', name: n, value: state.fx[n] });
+  state.fx[n] = !state.fx[n]; send({ type: 'fx', name: n, value: state.fx[n] });
   renderFx(); saveSession();
 };
 
@@ -151,7 +151,7 @@ function drawRoute() {
   const arr = (x, y) => `<path class="ra" d="M${x - 5} ${y - 3.5} L${x} ${y} L${x - 5} ${y + 3.5}Z"/>`;
   const pre = swap ? [['rat', drv, fx.rat, 'Drive'], ['fold', 'folder', fx.fold, 'Folder']] : [['fold', 'folder', fx.fold, 'Folder'], ['rat', drv, fx.rat, 'Drive']];
   pre.push(['flg', k.flgmode >= 0.5 ? 'chorus' : 'flanger', fx.flg, 'Flanger']);
-  let h = `<text class="rt" x="0" y="${Y + 5}">303</text>`;
+  let h = `<text class="rt" x="0" y="${Y + 5}">fm</text>`;
   pre.forEach(([u, label, on, tip], i) => { const x = 36 + i * 74; h += ln([[x - 10 - (i ? 0 : -2), Y], [x, Y]]) + arr(x, Y) + blk(u, label, x, Y, on, tip); });
   const sx = 270, cx = 428, ox = 506; // split, Compactor, sum
   h += ln([[246, Y], [sx, Y]]) + `<circle class="rn" cx="${sx}" cy="${Y}" r="2.5"/>`;

@@ -33,13 +33,12 @@ function knobHeard(el, p) {
   const a = knobAngle(p), pt = (deg, r) => { const t = (deg - 90) * Math.PI / 180; return `${(32 + r * Math.cos(t)).toFixed(2)} ${(32 + r * Math.sin(t)).toFixed(2)}`; };
   h.setAttribute('d', `M${pt(a, 29.5)}L${pt(a - 11, 40)}L${pt(a + 11, 40)}Z`);
 }
+// the effects' part values (fx.js COMPONENTS), for the readouts
+const FX_PARTS = Object.fromEntries(Object.entries(COMPONENTS).map(([k, d]) => [k, d.v]));
 function knobText(id, p) {
-  const c = state.parts;
+  const c = FX_PARTS;
   switch (id) {
     case 'tuning': return ((p - 0.5) * 2 >= 0 ? '+' : '') + ((p - 0.5) * 24).toFixed(1) + ' st';
-    case 'cutoff': return (preview.wCut * c.V_CUT * p * 1000).toFixed(1) + ' mV';
-    case 'resonance': return 'k = ' + (c.A_Q21 * p).toFixed(1);
-    case 'decay': return fmt(c.R138 + c.VR6 * Math.pow(p, 2.74), 'Ω');
     case 'dist': return '×' + Math.round(1 + (c.RAT_RD * Math.pow(p, 2.74) + 1) * (1 / c.RAT_RG1 + 1 / c.RAT_RG2));
     case 'filter': return fmt(Math.round(1 / (2 * Math.PI * (c.RAT_RF + 100e3 * p) * c.RAT_CFLT)), 'Hz');
     case 'dlytime': return dlyDiv(p)[0];
@@ -164,7 +163,7 @@ function drawKnob(id) {
 }
 function setKnob(id, p) {
   p = Math.min(1, Math.max(0, p)); state.knobs[id] = p;
-  preview.setKnob(id, p); drawKnob(id); send({ type: 'knob', name: id, value: cseqHeard('k:' + id, p) }); saveSession();
+  drawKnob(id); send({ type: 'knob', name: id, value: cseqHeard('k:' + id, p) }); saveSession();
 }
 
 

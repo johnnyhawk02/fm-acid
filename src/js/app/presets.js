@@ -1,20 +1,17 @@
 // ---------- presets ----------
-function soundSnap() { const x = snapshot(); return { knobs: x.knobs, parts: x.parts, ...(x.tune && { tune: x.tune }), ...(x.seqs && { seqs: x.seqs }), wave: x.wave, fx: x.fx }; }
+function soundSnap() { const x = snapshot(); return { knobs: x.knobs, fm: x.fm, ...(x.tune && { tune: x.tune }), ...(x.seqs && { seqs: x.seqs }), fx: x.fx }; }
 function applySound(x) {
   const c = cleanSettings(x);
   for (const k of KNOBS) state.knobs[k.id] = c.knobs[k.id] ?? k.def;
-  for (const k in COMPONENTS) state.parts[k] = c.parts[k] ?? COMPONENTS[k].v;
-  state.wave = c.wave || 'saw';
+  for (const p of FM_PARAMS) state.fm[p.id] = c.fm[p.id] ?? p.def; // a sound from the 303 app has none: the default FM sound
   state.tune = c.tune || new Array(12).fill(0); sendTune();
   cseqReleaseAll(); state.seqs = c.seqs || {}; // a sound without sequencers clears them
   state.fx = c.fx || { rat: false, lex: false, dly: false, fold: false, flg: false };
-  for (const n in state.fx) { preview.setFx(n, state.fx[n]); send({ type: 'fx', name: n, value: state.fx[n] }); }
+  for (const n in state.fx) send({ type: 'fx', name: n, value: state.fx[n] });
   renderFx();
-  for (const k of KNOBS) { preview.setKnob(k.id, state.knobs[k.id]); send({ type: 'knob', name: k.id, value: state.knobs[k.id] }); }
-  for (const k in COMPONENTS) { preview.setComponent(k, state.parts[k]); send({ type: 'component', name: k, value: state.parts[k] }); }
-  preview.waveform = state.wave; send({ type: 'wave', value: state.wave });
-  drawWave();
-  renderFrontMods(); drawTrim(); drawKeyTrack(); drawTune(); for (const id in knobEls) drawKnob(id); cseqLoaded(); saveSession();
+  for (const k of KNOBS) send({ type: 'knob', name: k.id, value: state.knobs[k.id] });
+  for (const p of FM_PARAMS) sendFm(p.id);
+  drawFmAll(); drawTune(); for (const id in knobEls) drawKnob(id); cseqLoaded(); saveSession();
 }
 function applyPattern(x) {
   const c = cleanSettings(x);
@@ -24,15 +21,6 @@ function applyPattern(x) {
   renderSeq(); pushPattern();
 }
 function loadStore(key) { const v = store.get(key, {}); return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; }
-// one-time migration from the single combined preset list
-{
-  const old = store.get('presets', null);
-  if (old && typeof old === 'object' && !store.get('migrated2', false)) {
-    const sp = loadStore('soundPresets'), pp = loadStore('patternPresets');
-    for (const [n, x] of Object.entries(old)) { const c = cleanSettings(x); sp[n] ||= { knobs: c.knobs, parts: c.parts, wave: c.wave }; if (c.pattern) pp[n] ||= { bpm: c.bpm, pattern: c.pattern }; }
-    store.set('soundPresets', sp); store.set('patternPresets', pp); store.set('migrated2', true);
-  }
-}
 function presetBar(pre, storeKey, builtins, snap, apply, autoName) {
   const sel = document.getElementById(pre + '-preset'), nameEl = document.getElementById(pre + '-name');
   const delBtn = document.getElementById(pre + '-del'), msg = document.getElementById(pre + '-msg');

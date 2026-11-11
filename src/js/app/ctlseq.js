@@ -17,11 +17,6 @@ function cseqHeard(key, base) {
   if (!r || !r.off || !q) return base;
   return Math.min(1, Math.max(0, base + r.off * q.depth / 100));
 }
-// a part's value heard (parts move along their dial's 0-1 travel); the exact setting when nothing is moving it
-function cseqPartValue(k) {
-  const t = toSlider(k, state.parts[k]) / SL, h = cseqHeard('p:' + k, t);
-  return h === t ? state.parts[k] : fromSlider(k, h * SL);
-}
 // send the value heard to the engine and show it on the dial
 function cseqPush(key) {
   const id = key.slice(2);
@@ -29,7 +24,7 @@ function cseqPush(key) {
     const h = cseqHeard(key, state.knobs[id]), k = knobEls[id];
     send({ type: 'knob', name: id, value: h });
     if (k) { knobDraw(k.el, state.knobs[id]); knobHeard(k.el, cseqOn(key) ? h : -1); k.val.textContent = knobText(id, h); }
-  } else { send({ type: 'component', name: id, value: cseqPartValue(id) }); drawPartKnob(id); }
+  } else { sendFm(id); drawFm(id); } // an FM voice parameter: moved along its dial's 0-1 travel (fm.js)
 }
 function cseqRelease(key) { if (!cseqRt[key]) return; delete cseqRt[key]; cseqPush(key); }
 function cseqReleaseAll() {
@@ -77,10 +72,10 @@ function cseqTick(i) {
 }
 
 // ---------- which dial is which ----------
-const CSEQ_UNIT = { fold: 'folder', dly: 'delay', cmp: 'compactor', flg: 'flanger' };
+const CSEQ_UNIT = { fold: 'folder', dly: 'delay', cmp: 'ducker', flg: 'flanger' };
 function cseqKnobLabel(k) {
   let u = '';
-  if (k.fx === 'rat') u = { rat: 'rat', ds: 'ds-1', ts: 'ts808' }[k.drv] || 'drive';
+  if (k.fx === 'rat') u = { rat: 'rodent', ds: 'dist one', ts: 'green 808' }[k.drv] || 'drive';
   else if (k.fx === 'lex') u = k.rev || '224';
   else if (k.fx) u = CSEQ_UNIT[k.fx] || k.fx;
   return (u ? u + ' ' : '') + k.name.toLowerCase();
@@ -92,28 +87,26 @@ function cseqCtl(t) {
     const k = KNOBS.find(x => x.id === id);
     return { key: 'k:' + id, el: kn, label: cseqKnobLabel(k), get: () => state.knobs[id], put: (v) => setKnob(id, v) };
   }
-  const p = kn.dataset.k;
-  if (p && p in COMPONENTS && !COMPONENTS[p].fixed) {
-    const name = (kn.getAttribute('aria-label') || p).replace(/\s*\(.*\)\s*$/, '').toLowerCase();
-    return { key: 'p:' + p, el: kn, label: name, get: () => state.parts[p], put: (v) => { applyPart(p, v); if (p === 'KT') drawKeyTrack(); if (p === 'I_REF') drawTrim(); } };
+  const f = kn.dataset.f;
+  if (f && f in FM_P) {
+    const name = (kn.getAttribute('aria-label') || f).toLowerCase(), op = /^[rlad]([A-D])$/.exec(f);
+    return { key: 'f:' + f, el: kn, label: (op ? 'op ' + op[1].toLowerCase() + ' ' : '') + name, get: () => state.fm[f], put: (v) => setFm(f, v) };
   }
   return null;
 }
-// the mark on every dial with a sequencer switched on (the Mods page redraws its dials, so this runs after that too)
+// the mark on every dial with a sequencer switched on
 function cseqMarks() {
   for (const el of document.querySelectorAll('.knob')) {
     const c = el.id === 'bpm' ? null : cseqCtl(el);
     const on = !!(c && cseqOn(c.key));
     el.classList.toggle('cseq', on);
     if (c && c.key[0] === 'k') knobHeard(el, on ? cseqHeard(c.key, state.knobs[c.key.slice(2)]) : -1);
-    else if (c) knobHeard(el, on ? cseqHeard(c.key, toSlider(c.key.slice(2), state.parts[c.key.slice(2)]) / SL) : -1);
+    else if (c) knobHeard(el, on ? cseqHeard(c.key, fmT(c.key.slice(2))) : -1);
   }
 }
 // a sound was loaded: its sequencers (or none) replace the old ones
 function cseqLoaded() {
-  // the page going away (the plug-in's window shut) puts the dials back first, so the engine keeps their settings
-addEventListener('pagehide', () => { for (const key of Object.keys(cseqRt)) cseqRelease(key); });
-cseqMarks();
+  cseqMarks();
   if (cseqCur) { if (state.seqs[cseqCur.key]) cseqDraw(); else cseqClose(); }
 }
 
@@ -170,9 +163,7 @@ function cseqDraw() {
   document.getElementById('cseq-kind').textContent = CSEQ_RAND[csKind][0];
   document.getElementById('cseq-val').textContent = `step ${csSel + 1}  ${csPct(q.vals[csSel], q)}`;
   csSteps.setAttribute('aria-valuetext', `Step ${csSel + 1} of ${q.len}, ${csPct(q.vals[csSel], q)}`);
-  // the page going away (the plug-in's window shut) puts the dials back first, so the engine keeps their settings
-addEventListener('pagehide', () => { for (const key of Object.keys(cseqRt)) cseqRelease(key); });
-cseqMarks();
+  cseqMarks();
 }
 // the playing step, outlined (and its page marked) as the sequencer reaches it
 function cseqDrawNow(k) {
@@ -295,8 +286,6 @@ addEventListener('keydown', (e) => {
     e.preventDefault(); cancel(); if (!csDlg.open || cseqCur?.key !== c.key) cseqOpen(c);
   });
 }
-// the Mods page dials are redrawn when a sound loads: mark them again
-new MutationObserver(cseqMarks).observe(document.getElementById('mods'), { childList: true });
 // the page going away (the plug-in's window shut) puts the dials back first, so the engine keeps their settings
 addEventListener('pagehide', () => { for (const key of Object.keys(cseqRt)) cseqRelease(key); });
 cseqMarks();

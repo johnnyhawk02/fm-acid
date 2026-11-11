@@ -1,7 +1,7 @@
 {
-  "name": "303 Circuit Model",
-  "short_name": "303",
-  "description": "An acid bass synth modelled part by part from the original 1982 circuit, with a step sequencer and effects.",
+  "name": "FM Acid",
+  "short_name": "FM Acid",
+  "description": "A four-operator FM bass and lead synth played by an acid step sequencer, with effects.",
   "start_url": "./",
   "scope": "./",
   "display": "fullscreen",

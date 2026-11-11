@@ -2,7 +2,7 @@
 <html lang="en">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<title>303 Circuit Model</title>
+<title>FM Acid</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#181412">
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
@@ -11,16 +11,16 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
-<meta name="apple-mobile-web-app-title" content="303">
+<meta name="apple-mobile-web-app-title" content="FM Acid">
 <style>@font-face { font-family: 'VT323'; font-style: normal; font-weight: 400; font-display: block; src: url(fonts/VT323-Regular.ttf) format('truetype'); }</style>
 <script>
 // Inside the VST3 plug-in (plugin/) this page is the plug-in's screen: the plug-in hands it its saved storage and takes
 // the engine messages, and the DAW's transport and tempo replace the Play button and Tempo dial. In a browser this is null.
 const tbPlugin = (() => {
-  const J = window.__JUCE__, d = J && J.initialisationData && J.initialisationData.tb303 && J.initialisationData.tb303[0];
+  const J = window.__JUCE__, d = J && J.initialisationData && J.initialisationData.fmacid && J.initialisationData.fmacid[0];
   if (!d || !J.backend) return null;
   document.documentElement.dataset.plugin = '';
-  const emit = (m) => J.backend.emitEvent('tb303', m), data = new Map(Object.entries(d.store || {}));
+  const emit = (m) => J.backend.emitEvent('fmacid', m), data = new Map(Object.entries(d.store || {}));
   const storage = { // a Storage the plug-in keeps (its own state for this instance, and a library shared by every instance)
     getItem: (k) => data.has(k) ? data.get(k) : null,
     setItem: (k, v) => { v = String(v); data.set(k, v); emit({ type: 'store', key: k, value: v }); },
@@ -28,18 +28,18 @@ const tbPlugin = (() => {
     key: (i) => [...data.keys()][i] ?? null,
     get length() { return data.size; },
   };
-  return { info: d, storage, send: emit, on: (fn) => J.backend.addEventListener('tb303', fn) };
+  return { info: d, storage, send: emit, on: (fn) => J.backend.addEventListener('fmacid', fn) };
 })();
 const tbStore = tbPlugin ? tbPlugin.storage : (() => { try { return localStorage; } catch { return null; } })();
 </script>
-<script>try { const r = document.documentElement, t = JSON.parse(tbStore.getItem('tb303.lcdTheme')), v = JSON.parse(tbStore.getItem('tb303.lcdVars')); if (typeof t === 'string') r.dataset.lcd = t; if (JSON.parse(tbStore.getItem('tb303.lcdMode')) !== 'mono') r.dataset.lcdmode = 'colour'; if (v) for (const k in v) r.style.setProperty(k, v[k]); } catch {}</script>
+<script>try { const r = document.documentElement, t = JSON.parse(tbStore.getItem('fmacid.lcdTheme')), v = JSON.parse(tbStore.getItem('fmacid.lcdVars')); if (typeof t === 'string') r.dataset.lcd = t; if (JSON.parse(tbStore.getItem('fmacid.lcdMode')) !== 'mono') r.dataset.lcdmode = 'colour'; if (v) for (const k in v) r.style.setProperty(k, v[k]); } catch {}</script>
 <style>
 /*@css*/
 </style>
 <div class="rotate" role="note"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2.5" width="10" height="19" rx="2"/><path d="M11 18.5h2"/></svg><p>Turn sideways for a bigger view</p></div>
 <div class="main">
   <header class="top">
-    <h1 class="status">303 circuit model</h1>
+    <h1 class="status">FM Acid</h1>
     <button class="icon play" id="play" type="button" aria-label="Play"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="tri" d="M7 4.5 L19.5 12 L7 19.5 Z"/><rect class="sq" x="6" y="6" width="12" height="12"/></svg></button>
     <button class="seqbtn" id="seq-on" type="button" aria-pressed="true" aria-label="Sequencer on">seq</button>
     <div class="bpm">
@@ -68,11 +68,12 @@ const tbStore = tbPlugin ? tbPlugin.storage : (() => { try { return localStorage
     <span class="status" id="status" role="status">Stopped</span>
   </header>
 
-  <div class="panel dev" id="panel" data-title="303 Voice"></div>
+  <div class="panel dev" id="panel" data-title="FM Voice"></div>
 
   <div class="tabs mtabs" id="mtabs" role="tablist" aria-label="Sections">
     <button type="button" role="tab" data-pane="seq">Sequencer</button>
-    <button type="button" role="tab" data-pane="mods">Mods</button>
+    <button type="button" role="tab" data-pane="ops">Operators</button>
+    <button type="button" role="tab" data-pane="shape">Shape</button>
     <button type="button" role="tab" data-pane="fx">FX</button>
     <button type="button" role="tab" data-pane="tune">Tuning</button>
   </div>
@@ -137,7 +138,9 @@ const tbStore = tbPlugin ? tbPlugin.storage : (() => { try { return localStorage
     </div>
   </section>
 
-  <div class="pane" data-title="Mods" id="pane-mods" role="tabpanel" aria-label="Mods" hidden><div class="mods" id="mods" aria-label="Common mods"></div></div>
+  <div class="pane fxpane opspane" data-title="Operators" id="pane-ops" role="tabpanel" aria-label="Operators" hidden><div class="ops" id="ops"></div></div>
+
+  <div class="pane fxpane shapepane" data-title="Shape" id="pane-shape" role="tabpanel" aria-label="Shape" hidden><div class="shape" id="shape"></div></div>
 
   <div class="pane tupane" data-title="Tuning" id="pane-tune" role="tabpanel" aria-label="Tuning" hidden>
     <div class="sq-row tu-top">
@@ -148,7 +151,7 @@ const tbStore = tbPlugin ? tbPlugin.storage : (() => { try { return localStorage
         <button type="button" data-t="mean" aria-pressed="false" title="Quarter-comma meantone from the root: pure major thirds, one howling wolf fifth">Meantone</button>
         <button type="button" data-t="drift" title="Every note a few cents out at random, like an old unit whose DAC has drifted">Drift</button>
       </div>
-      <div class="acts tu-end"><button type="button" id="tu-reset" title="Every note back to 0 cents: equal temperament, the stock 303">Reset</button><button type="button" id="tu-undo" disabled>Undo</button></div>
+      <div class="acts tu-end"><button type="button" id="tu-reset" title="Every note back to 0 cents: equal temperament">Reset</button><button type="button" id="tu-undo" disabled>Undo</button></div>
     </div>
     <div class="tu-faders" id="tu-faders" role="group" aria-label="Fine tune of each note, in cents, the same in every octave"></div>
     <div class="sq-row tu-foot">
@@ -227,18 +230,16 @@ const tbStore = tbPlugin ? tbPlugin.storage : (() => { try { return localStorage
     <section class="osec" id="osec-about" role="tabpanel" aria-label="About" hidden>
       <div class="opt-install"><button type="button" id="opt-install">Install app</button><span id="opt-install-msg" role="status"></span></div>
       <div class="notes">
-        <p><strong>303 Circuit Model</strong> <span class="about-ver"></span>, by Johnny. Free and open source under the GNU AGPL v3, with no warranty. Source, licence, downloads and bug reports: github.com/johnnyhawk02/tb303-circuit-model.</p>
-        <p><strong>Privacy.</strong> No accounts, no tracking, nothing sent anywhere. Your presets and settings stay in this browser (in the plug-in, in one file on your computer).</p>
-        <p><strong>Trademarks.</strong> Not affiliated with or endorsed by Roland, Behringer or the makers of any gear it is modelled on. Product names belong to their owners and are mentioned only to describe the circuits.</p>
-        <p><strong>Source.</strong> The original 1982 main board schematic, with values that sheet does not show clearly read from a modern clone's schematic. Parts on neither sheet are estimates. Running at <span id="rate">2× oversampling</span>.</p>
-        <p><strong>Pitch and VCO.</strong> A 6-bit R-2R ladder from 5.333 V gives 1/12 V per step. An exponential current charges C33 from 5.5 V to 12 V, then resets, smoothed with a polyBLEP.</p>
-        <p><strong>VCF.</strong> Four coupled ladder stages with a tanh law per transistor pair, 18n bottom cap and 33n above, solved implicitly. Full feedback (k = 17) self-oscillates.</p>
-        <p><strong>Envelopes and VCA.</strong> C62 decays through R138 + VR6 (200 ms to 2.5 s). Accent shorts VR6 and charges the sweep cap. The OTA VCA gets resonance compensation through C76/R100, and normal notes fade in through R_SOFT.</p>
-        <p><strong>Mods.</strong> The Mods page parts map mostly to the controls of the best-known 303 mod kits: Normal and Accent decay, VEG decay, Soft attack, Slide time, Sweep speed and self-oscillating resonance.</p>
+        <p><strong>FM Acid</strong> <span class="about-ver"></span>, by Johnny. Free and open source under the GNU AGPL v3, with no warranty. Source, licence and bug reports: github.com/johnnyhawk02/fm-acid.</p>
+        <p><strong>Privacy.</strong> No accounts, no tracking, nothing sent anywhere. Your presets and settings stay in this browser.</p>
+        <p><strong>What it is.</strong> The sequencer, screen and effects of Johnny's earlier acid bass synth app around a different sound engine: one 4-operator FM voice from his FM drum machine fm/dm, played as a monophonic bass and lead synth with notes, accents and slides. Running at <span id="rate">2× oversampling</span>.</p>
+        <p><strong>The voice.</strong> Four sine operators in eight algorithms, each with its own ratio (or fixed frequency), level, attack and decay; feedback on operator D; a pitch envelope, click and noise layers; a state-variable filter with drive, envelope and key track; an amp envelope with sustain and release; a bit crusher; an LFO with two destinations. Accent plays a note at full velocity, and the Velocity dials on the Shape page set what that changes. The voice code is MIT licensed (fm/dm, © Johnny Hawk); it is a digital FM design of its own and models no hardware.</p>
+        <p><strong>Trademarks.</strong> Not affiliated with or endorsed by the makers of any gear the effects are modelled on. Product names belong to their owners and are mentioned only to describe the circuits.</p>
         <p><strong>Digital 224.</strong> Runs on its own 20 kHz clock with 12-bit gain-ranging converters, 16-bit words and a shared 32K-word delay memory. The core is Dattorro's published Griesinger-style plate network; the original unit's microcode is not public, so the hall, chamber, room and chorus variants are estimates.</p>
         <p><strong>Plate, Spring, Convolution.</strong> The other reverbs on the same slot: Dattorro's published plate as he gives it, a dispersive spring tank after Välimäki, Parker and Abel (stretched allpasses in a delay loop), and partitioned FFT convolution of real impulse responses (below) plus generated ones.</p>
         <p><strong>Convolution IRs.</strong> Plate impulse responses by Greg Hopkins (CC BY). Room, silo, garage, Musikverein and On a Star impulse responses from Voxengo, free for any use. Trimmed to 3 s at 48 kHz; see irs/CREDITS.md.</p>
-        <p><strong>Rodent drive.</strong> LM308 stage with gain-bandwidth and slew limits from its 30p cap, 1N914 diodes to ground, then the 3.3n filter.</p>
+        <p><strong>Drives and folder.</strong> Rodent: an LM308 stage with gain-bandwidth and slew limits from its 30p cap, 1N914 diodes to ground, then the 3.3n filter. Dist One and Green 808 from ElectroSmash's circuit analyses. The west coast folder after Esqueda, Pöntynen, Välimäki and Parker (DAFx-17).</p>
+        <p><strong>Font.</strong> VT323 by Peter Hull, SIL Open Font License.</p>
       </div>
     </section>
   </div>
@@ -266,7 +267,7 @@ const tbStore = tbPlugin ? tbPlugin.storage : (() => { try { return localStorage
   </div>
 </dialog>
 
-<!-- the voice model: used here for readouts and the fallback engine, and loaded again into the AudioWorklet -->
+<!-- the engine (FM voice, effects, player): used here for readouts and the fallback engine, and loaded again into the AudioWorklet -->
 <script id="model">
 /*@model*/
 </script>

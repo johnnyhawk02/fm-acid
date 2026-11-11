@@ -29,13 +29,11 @@ showSec(document.getElementById('osec-' + store.get('optTab', 'midi')) ? store.g
     store.set('lcdTheme', k); mark(); applyLook(); if (focus) box.querySelector(`[data-lcd="${k}"]`).focus();
   };
 
-  // Brightness, saturation, dirt, grain: saved as tb303.lcdLook (the slider values) and tb303.lcdVars (the CSS
+  // Brightness, saturation, dirt, grain: saved as fmacid.lcdLook (the slider values) and fmacid.lcdVars (the CSS
   // variables they make, which the page head puts back before the styles load). At the stock values nothing is set at all.
-  // Dirt starts at 0 (Johnny, 2026-11-05); a look saved before that had dirt 100 as its stock value, so it is reset once
-  // Glow was removed (Johnny, 2026-11-05: fixed at 0); a saved look's glow value is dropped and its --glow variable cleared
+  // Dirt starts at 0 and there is no Glow (VARS still clears a --glow left by anything older)
   const LOOK0 = { bright: 0, sat: 100, dirt: 0, grain: 100 };
   const look = { ...LOOK0, ...store.get('lcdLook', {}) };
-  delete look.glow;
   const VARS = ['--glass', '--panel-rgb', '--dirt', '--grain', '--glow'];
   const hex2hsl = (h) => {
     const n = parseInt(h.replace('#', ''), 16), r = (n >> 16 & 255) / 255, g = (n >> 8 & 255) / 255, b = (n & 255) / 255;
@@ -63,8 +61,6 @@ showSec(document.getElementById('osec-' + store.get('optTab', 'midi')) ? store.g
     for (const k in vars) root.style.setProperty(k, vars[k]);
     store.set('lcdLook', look); store.set('lcdVars', vars);
   }
-  if (!store.get('lcdLookV', 0)) { look.dirt = 0; store.set('lcdLookV', 2); }
-  if (store.get('lcdLookV', 0) < 3) { store.set('lcdLookV', 3); applyLook(); }  // drops glow from saved looks (VARS still clears --glow)
   const lookBox = document.getElementById('lcd-look');
   const show = () => { for (const i of lookBox.querySelectorAll('input')) { const k = i.dataset.look; i.value = look[k]; i.nextElementSibling.textContent = k === 'bright' ? (look[k] > 0 ? '+' : '') + look[k] : look[k] + '%'; i.dispatchEvent(new Event('input', { bubbles: true })); } };
   lookBox.addEventListener('input', (e) => { const i = e.target; if (!i.dataset?.look || !e.isTrusted) return; look[i.dataset.look] = +i.value; applyLook(); show(); });
@@ -85,7 +81,7 @@ showSec(document.getElementById('osec-' + store.get('optTab', 'midi')) ? store.g
   mark();
 
   // Mono / Grey + colour: Mono is the chosen theme as one ink on one glass; Grey + colour (the default) lays the grey glass
-  // under it and uses the chosen theme as the one accent colour (lcd.css, [data-lcdmode=colour]). Saved as tb303.lcdMode
+  // under it and uses the chosen theme as the one accent colour (lcd.css, [data-lcdmode=colour]). Saved as fmacid.lcdMode
   const modeBox = document.getElementById('lcd-mode');
   const markMode = () => { for (const b of modeBox.children) b.setAttribute('aria-pressed', b.dataset.mode === (root.dataset.lcdmode === 'colour' ? 'colour' : 'mono')); };
   const setMode = (m) => { if (m === 'colour') root.dataset.lcdmode = 'colour'; else delete root.dataset.lcdmode; store.set('lcdMode', m); markMode(); applyLook(); };

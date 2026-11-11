@@ -1,10 +1,8 @@
 // ---------- MIDI: CC 1 onwards, any channel ----------
-// CC 1-8 are the main panel's dials left to right (Key track sits after Reso), CC 9 the Filter trim, then the Mods page.
-const voiceCc = (k) => ({ name: k.name, set: (t) => setKnob(k.id, t) });
-const MIDI_MAP = [...KNOBS.filter(k => !k.fx).flatMap(k => k.id === 'resonance'
-    ? [voiceCc(k), { name: 'Key track', set: (t) => setPartT('KT', t, true) }] : [voiceCc(k)]),
-  { name: 'Filter trim', set: (t) => setPartT('I_REF', t) },
-  ...FRONT_MODS.map(([k, name]) => ({ name, set: (t) => setPartT(k, t) }))];
+// CC 1-11 are the front panel's dials left to right, then the Operators page's four columns (CC 12-27).
+const fmCc = (id, name) => ({ name, set: (t) => setFm(id, fmFromNorm(fmP(id), t)) });
+const MIDI_MAP = [{ name: 'Tuning', set: (t) => setKnob('tuning', t) }, ...PANEL_FM.map(([id, name]) => fmCc(id, name)), { name: 'Volume', set: (t) => setKnob('volume', t) },
+  ...OPS.flatMap(o => [['r', 'ratio'], ['l', 'level'], ['a', 'attack'], ['d', 'decay']].map(([k, n]) => fmCc(k + o, `Op ${o} ${n}`)))];
 // Notes (any channel, octaves named as in Logic and Ableton, C3 = middle C = note 60): C0-G0 (24-31) pick pattern 1-8,
 // C1-C3 (36-60) set the root note the pattern plays from, C1 as written, each semitone up shifts it up one. The root
 // note is a performance setting: it is not saved and comes back to C1 when the page loads.

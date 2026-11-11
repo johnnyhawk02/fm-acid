@@ -8,25 +8,25 @@ async function initAudio() {
   try {
     const url = URL.createObjectURL(new Blob([src], { type: 'application/javascript' }));
     await ctx.audioWorklet.addModule(url);
-    node = new AudioWorkletNode(ctx, 'tb303', { numberOfInputs: 0, outputChannelCount: [2] });
+    node = new AudioWorkletNode(ctx, 'fmacid', { numberOfInputs: 0, outputChannelCount: [2] });
     node.port.onmessage = (e) => { if (e.data.type === 'step') markStep(e.data.step); };
     node.connect(analyser);
   } catch (err) {
     console.warn("worklet failed", err && err.message);
-    // Fallback: run the same voice on the main thread
+    // Fallback: run the same engine on the main thread
     fallback = makeFallback(); fallback.sp.connect(analyser);
   }
   document.getElementById('rate').textContent = `2× of ${ctx.sampleRate / 1000} kHz`;
   for (const k of KNOBS) send({ type: 'knob', name: k.id, value: state.knobs[k.id] });
-  for (const k in state.parts) if (state.parts[k] !== COMPONENTS[k].v) send({ type: 'component', name: k, value: state.parts[k] });
-  send({ type: 'wave', value: state.wave }); sendTune(); send({ type: 'bpm', value: state.bpm }); sendPattern(); sendGroove(); sendTranspose(); sendSeq();
+  for (const p of FM_PARAMS) sendFm(p.id);
+  sendTune(); send({ type: 'bpm', value: state.bpm }); sendPattern(); sendGroove(); sendTranspose(); sendSeq();
   for (const n in state.fx) send({ type: 'fx', name: n, value: state.fx[n] });
   sendDeclick();
   if (revType(state.knobs) === 3) loadIRs();
 }
 // no AudioWorklet: the same engine on the main thread through a ScriptProcessor
 function makeFallback() {
-  const sp = ctx.createScriptProcessor(1024, 0, 2), eng = new TB303Engine(ctx.sampleRate, markStep);
+  const sp = ctx.createScriptProcessor(1024, 0, 2), eng = new SynthEngine(ctx.sampleRate, markStep);
   sp.onaudioprocess = (e) => eng.render(e.outputBuffer.getChannelData(0), e.outputBuffer.getChannelData(1));
   return { sp, msg: (m) => eng.message(m) };
 }
