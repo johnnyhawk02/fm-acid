@@ -3,7 +3,8 @@
  * --------------
  * One FM voice from fm/dm (github.com/johnnyhawk02/fm-drum-machine): its src/engine/dsp.js, params.js and voice.js
  * in one plain script. 4 operators, 8 algorithms, pitch envelope, click, noise, state-variable filter with drive,
- * amp envelope, bit crusher, an LFO with two destinations, velocity response, humanise, FM noise and drift.
+ * amp envelope, bit crusher, an LFO with two destinations, velocity response, humanise, FM noise and drift,
+ * turned from a drum into a monophonic synth voice that plays notes, accents and slides.
  * No dependencies: it runs in Node, in a browser and inside an AudioWorklet.
  *
  * MIT License
@@ -150,8 +151,8 @@ class FmOnePole {
 const FM_SPEC = [
   // ---- tone / fm
   ['algo', 0, 7, 0, 'int', 'algo'],
-  ['tune', 20, 8000, 55, 'exp', 'tune'],
-  ['fmLvl', 0, 1, 0.8, 'lin', 'fm lvl'],
+  ['fmLvl', 0, 1, 0.6, 'lin', 'fm lvl'],
+  ['fmDecay', 0.25, 4, 1, 'exp', 'fm decay'], // multiplies every modulator's own decay: one knob for how fast the FM brightness falls
   ['fb', -1, 1, 0, 'bip', 'fdbk'], // below 0 the feedback is squared: a rougher, asymmetric colour
   ['fmEnd', 0, 1, 0, 'lin', 'fm end'], // modulator envelopes settle at this level instead of 0
   ['phase', 0, 1, 0, 'int', '90° start'],
@@ -161,9 +162,9 @@ const FM_SPEC = [
   // operator A..D: ratio, level, attack, decay, curve, fixed
   ...['A', 'B', 'C', 'D'].flatMap((o) => [
     [`r${o}`, 0.125, 16, 1, 'exp', `ratio ${o}`],
-    [`l${o}`, 0, 1, o === 'A' ? 1 : 0, 'lin', `level ${o}`],
+    [`l${o}`, 0, 1, o === 'A' ? 1 : o === 'B' ? 0.8 : 0, 'lin', `level ${o}`],
     [`a${o}`, 0, 200, 0, 'lin', `atk ${o}`],
-    [`d${o}`, 1, 4000, 200, 'exp', `dec ${o}`],
+    [`d${o}`, 1, 4000, o === 'A' ? 4000 : 200, 'exp', `dec ${o}`],
     [`fx${o}`, 0, 1, 0, 'int', `fixed ${o}`],
   ]),
   // pitch envelope
@@ -181,19 +182,24 @@ const FM_SPEC = [
   ['nAtk', 0, 100, 0, 'lin', 'n atk'],
   ['nDec', 1, 3000, 150, 'exp', 'n dec'],
   // main filter
-  ['fType', 0, 3, 0, 'int', 'flt'], // 0 off, 1 lp, 2 bp, 3 hp
-  ['fCut', 20, 20000, 12000, 'exp', 'cutoff'],
-  ['fRes', 0, 1, 0.1, 'lin', 'reso'],
+  ['fType', 0, 3, 1, 'int', 'flt'], // 0 off, 1 lp, 2 bp, 3 hp
+  ['fCut', 20, 20000, 2000, 'exp', 'cutoff'],
+  ['fRes', 0, 1, 0.3, 'lin', 'reso'],
   ['fDrive', 0, 1, 0, 'lin', 'drive'],
-  ['fEnv', -1, 1, 0, 'bip', 'f env'],
-  ['fEnvDec', 1, 2000, 100, 'exp', 'f dec'],
+  ['fEnv', -1, 1, 0.5, 'bip', 'f env'],
+  ['fEnvDec', 1, 2000, 200, 'exp', 'f dec'],
+  ['kTrack', 0, 1, 0.3, 'lin', 'key track'], // the cutoff follows the note: 1/3 is exact (an octave of cutoff per octave of pitch), 1 is three times that
   // amp
   ['aAtk', 0, 100, 0, 'lin', 'attack'],
   ['aHold', 0, 500, 0, 'lin', 'hold'],
-  ['aDec', 5, 6000, 300, 'exp', 'decay'],
+  ['aDec', 5, 6000, 3000, 'exp', 'decay'],
+  ['aSus', 0, 1, 0, 'lin', 'sustain'], // the level the amp envelope decays to while the note is held
+  ['aRel', 1, 2000, 8, 'exp', 'release'], // after note-off, from wherever the envelope is
   ['aCurve', 0, 1, 0.5, 'lin', 'curve'],
   ['level', 0, 1, 0.8, 'lin', 'level'],
-  ['pan', -1, 1, 0, 'bip', 'pan'],
+  // playing it as a synth
+  ['slide', 10, 500, 60, 'exp', 'slide'], // ms a legato note takes to arrive (95% of the way)
+  ['accent', 0, 1, 0.7, 'lin', 'accent'], // unaccented notes play at velocity 1 - 0.6 * accent, accented ones at 1
   // crush
   ['bits', 1, 16, 16, 'lin', 'bits'],
   ['srDiv', 1, 64, 1, 'exp', 'rate'],
@@ -238,10 +244,21 @@ function fmDefaults() {
 }
 
 // ---------------------------------------------------------------------------
-// the voice (fm/dm voice.js)
+// the voice (fm/dm voice.js), played as a monophonic synth
+//
+// fm/dm triggers a hit and lets it decay. Here the voice takes notes instead:
+//   noteOn(code, accent, slide)   code 33 = A = 110 Hz; slide = glide from the note sounding, no retrigger
+//   noteOff()                     the amp envelope releases from wherever it is
+//   setParam(id, value)           real units, as in FM_PARAMS
+//   process(out, start, end)      mono, at the rate given to the constructor
+// What was added to the drum voice: pitch from the note (with Tuning and a per-note fine tune), slide, sustain and
+// release on the amp envelope, accent as velocity, filter key track and the FM decay multiplier. Everything else is
+// fm/dm's, sample for sample (tests/bitmatch.mjs).
 const FM_CTRL = 16; // control-rate block
 const FM_FADE_N = 64; // retrigger fade, samples
+const FM_KT_REF = 110 * Math.pow(2, 3 / 12); // key track pivots on the C above the 110 Hz A: that note's cutoff does not move
 const fmLm = (d1, d2, d, l) => (d1 === d ? l : 0) + (d2 === d ? l : 0);
+const fmNoteHz = (code) => 110 * Math.pow(2, (code - 33) / 12);
 
 // algorithms: modulator bitmask per op [A,B,C,D] and carrier mask (bit0=A)
 const FM_ALG_MOD = [
@@ -259,6 +276,7 @@ const FM_ALG_CAR = [0b0001, 0b0001, 0b0101, 0b0001, 0b0111, 0b0001, 0b0111, 0b11
 class FmVoice {
   constructor(sr, seed) {
     this.sr = sr;
+    this.p = Float32Array.from(fmDefaults()); // the parameter block, real units
     this.rng = new FmRng(seed);
     this.ph = new Float64Array(4); // op phases (cycles)
     this.inc = new Float64Array(4);
@@ -274,11 +292,12 @@ class FmVoice {
     this.lfoPh = 0;
     this.lfoVal = 0;
     this.lfoSH = 0;
-    this.lPitch = this.lFm = this.lCut = this.lLvl = this.lPan = this.lNoise = this.lRatio = 0;
+    this.lPitch = this.lFm = this.lCut = this.lLvl = this.lNoise = this.lRatio = 0;
     this.velAmp = 1;
     this.fmIdx = 0;
     this.fade = 0;
     this.pendVel = 1;
+    this.pendHz = 110;
     this.incBase = new Float64Array(4);
     this.aa = new Float32Array(4).fill(1);
     this.wob = new FmOnePole();
@@ -288,52 +307,65 @@ class FmVoice {
     this.driftInc = 0;
     this.fixedMask = 0;
     this.pSemis = 0;
+    // the note
+    this.gate = false;
+    this.hz = 110;      // the pitch sounding (it glides to hzTo on a slide)
+    this.hzTo = 110;
+    this.gliding = false;
+    this.tuneMul = 1;   // the Tuning dial, as a frequency ratio
+    this.tuneCents = new Float64Array(12); // fine tune per note of the scale, C first
+    this.rel = 1;       // release gain: 1 while the note is held, falling after note-off
+    this.relC = 1;
     this.reset();
-    // outputs for this block (post pan)
-    this.L = 0;
-    this.R = 0;
     this.mono = 0;
-    this.meter = 0;
   }
 
-  reset() {
-    this.active = false;
-    this.vel = 1;
-    this.t = 0; // samples since trigger
-    this.amp = 0;
-    this.ampX = 0;
-    this.ampStage = 3; // 0 atk 1 hold 2 dec 3 idle
-    this.pEnv = 0;
-    this.fEnv = 0;
-    this.clkEnv = 0;
-    this.nEnv = 0;
-    this.nStage = 2;
-    this.crushHold = 0;
-    this.crushN = 0;
-    this.ctr = 0;
-    this.filt.reset();
-    this.nfilt.reset();
+  setParam(id, value) { const i = FM_P[id]; if (i !== undefined) this.p[i] = value; }
+  getParam(id) { return this.p[FM_P[id]]; }
+  // the front panel's Tuning, in semitones; it moves a sounding note too
+  setTuning(semis) { this.tuneMul = Math.pow(2, semis / 12); }
+  // cents: 12 offsets, C first (code 0 is a C); the next note picks it up, a held note keeps its pitch
+  setTune(cents) { for (let i = 0; i < 12; i++) this.tuneCents[i] = +(cents && cents[i]) || 0; }
+
+  // code: the note number (33 = A = 110 Hz, a semitone a step). accent: true or false.
+  // slide: true when this note should glide from the one sounding (legato): the envelopes do not restart.
+  noteOn(code, accent, slide) {
+    code = Math.max(0, Math.min(127, code | 0));
+    const c = this.tuneCents[code % 12], hz = c ? fmNoteHz(code) * Math.pow(2, c / 1200) : fmNoteHz(code);
+    if (this.gate && slide && this.active) { this.hzTo = hz; this.gliding = true; return; }
+    this.gate = true;
+    this.hit(hz, accent ? 1 : 1 - 0.6 * this.p[FM_P.accent]);
+  }
+  noteOff() {
+    if (!this.gate) return;
+    this.gate = false;
+    this.relC = fmDecayCoef(this.p[FM_P.aRel], this.sr);
   }
 
-  // A new hit on a sounding voice first fades the old note out over FM_FADE_N samples (no click),
-  // then starts. A silent voice starts at once.
-  trigger(p, b, vel) {
+  // A new note on a sounding voice first fades the old one out over FM_FADE_N samples (no click),
+  // then starts. A silent voice starts at once. (fm/dm's trigger, with the pitch.)
+  hit(hz, vel) {
     if (this.active && (this.amp > 1e-3 || this.nEnv > 1e-3 || this.clkEnv > 1e-3)) {
       this.fade = FM_FADE_N;
       this.pendVel = vel;
+      this.pendHz = hz;
       return;
     }
-    this.start(p, b, vel);
+    this.start(hz, vel);
   }
 
-  start(p, b, vel) {
-    const sr = this.sr;
+  start(hz, vel) {
+    const sr = this.sr, p = this.p, b = 0;
     this.fade = 0;
     this.active = true;
     this.vel = vel;
+    this.hz = this.hzTo = hz;
+    this.gliding = false;
+    this.rel = 1;
     this.t = 0;
     const car0 = FM_ALG_CAR[p[b + FM_P.algo] | 0];
     const ninety = p[b + FM_P.phase] >= 0.5;
+    const fmDec = p[b + FM_P.fmDecay];
     for (let o = 0; o < 4; o++) {
       const base = FM_P.rA + o * 5;
       this.ph[o] = ninety ? ((car0 >> o) & 1 ? 0.25 : 0.5) : 0;
@@ -341,7 +373,7 @@ class FmVoice {
       const atk = p[b + base + 2];
       this.atkInc[o] = atk <= 0.05 ? 2 : 1000 / (atk * sr);
       this.stage[o] = 0;
-      this.decC[o] = fmDecayCoef(p[b + base + 3], sr);
+      this.decC[o] = fmDecayCoef((car0 >> o) & 1 ? p[b + base + 3] : p[b + base + 3] * fmDec, sr);
     }
     this.fbz = this.fbz2 = 0;
     // amp
@@ -375,11 +407,32 @@ class FmVoice {
     this.hIdx = 1 + this.rng.bi() * hum * 0.2;
     this.wob.z = 0;
     this.ctr = 0;
+    // a note-off that came during the retrigger fade
+    if (!this.gate) this.relC = fmDecayCoef(p[b + FM_P.aRel], sr);
+  }
+
+  reset() {
+    this.active = false;
+    this.vel = 1;
+    this.t = 0; // samples since trigger
+    this.amp = 0;
+    this.ampX = 0;
+    this.ampStage = 3; // 0 atk 1 hold 2 dec 3 idle 4 sustain
+    this.pEnv = 0;
+    this.fEnv = 0;
+    this.clkEnv = 0;
+    this.nEnv = 0;
+    this.nStage = 2;
+    this.crushHold = 0;
+    this.crushN = 0;
+    this.ctr = 0;
+    this.filt.reset();
+    this.nfilt.reset();
   }
 
   // control-rate update
-  control(p, b) {
-    const sr = this.sr;
+  control() {
+    const sr = this.sr, p = this.p, b = 0;
     const dt = FM_CTRL / sr;
     // lfo
     const rate = p[b + FM_P.lRate];
@@ -404,15 +457,22 @@ class FmVoice {
     this.lFm = fmLm(d1, d2, 2, l);
     this.lCut = fmLm(d1, d2, 3, l) * 4;
     this.lLvl = fmLm(d1, d2, 4, l);
-    this.lPan = fmLm(d1, d2, 5, l);
     this.lNoise = fmLm(d1, d2, 6, l);
     this.lRatio = fmLm(d1, d2, 7, l);
+
+    // slide: the pitch glides to the new note in log frequency, a one-pole that is 95% there after the slide time
+    if (this.gliding) {
+      const a = 1 - Math.exp((-3 * FM_CTRL * 1000) / (p[b + FM_P.slide] * sr));
+      const cur = Math.log2(this.hz), to = Math.log2(this.hzTo), nx = cur + (to - cur) * a;
+      if (Math.abs(to - nx) < 1e-5) { this.hz = this.hzTo; this.gliding = false; } else this.hz = Math.pow(2, nx);
+    }
 
     const vel = this.vel;
     // pitch
     // the pitch envelope itself runs per sample (see process); here the rest of the pitch
     this.pSemis = p[b + FM_P.pAmt] * (1 - p[b + FM_P.vPitch] * (1 - vel));
-    const f0 = p[b + FM_P.tune] * Math.pow(2, this.lPitch / 12);
+    const note = this.hz * this.tuneMul;
+    const f0 = note * Math.pow(2, this.lPitch / 12);
     const rmul = Math.pow(2, this.lRatio * 2);
     const car = FM_ALG_CAR[p[b + FM_P.algo] | 0];
     let fixed = 0;
@@ -440,7 +500,8 @@ class FmVoice {
     // filter
     const ft = p[b + FM_P.fType] | 0;
     if (ft) {
-      const oct = p[b + FM_P.fEnv] * this.fEnv * 6 + this.lCut - p[b + FM_P.vFilt] * (1 - vel) * 3;
+      const kt = p[b + FM_P.kTrack];
+      const oct = p[b + FM_P.fEnv] * this.fEnv * 6 + this.lCut - p[b + FM_P.vFilt] * (1 - vel) * 3 + (kt > 0 ? kt * 3 * Math.log2(note / FM_KT_REF) : 0);
       this.filt.set(p[b + FM_P.fCut] * Math.pow(2, oct), p[b + FM_P.fRes], sr);
     }
     this.nfilt.set(p[b + FM_P.nCut], p[b + FM_P.nRes], sr);
@@ -450,12 +511,19 @@ class FmVoice {
     this.fmIdx = fmv * fmv * 4 * (1 - p[b + FM_P.vFm] * (1 - vel)) * (1 + this.lFm) * this.hIdx;
   }
 
-  process(p, b) {
+  // out[start..end) gets the voice, mono
+  process(out, start = 0, end = out.length) {
+    for (let n = start; n < end; n++) { this.tick(); out[n] = this.mono; }
+  }
+
+  // one sample, left in this.mono
+  tick() {
     if (!this.active) {
-      this.L = this.R = this.mono = 0;
+      this.mono = 0;
       return;
     }
-    if (this.ctr === 0) this.control(p, b);
+    const p = this.p, b = 0;
+    if (this.ctr === 0) this.control();
     this.ctr = (this.ctr + 1) % FM_CTRL;
 
     // ---- pitch envelope, per sample
@@ -487,6 +555,11 @@ class FmVoice {
       } else env[o] *= this.decC[o];
     }
 
+    // ---- release: after note-off everything the gate holds up (the amp envelope, the modulators' FM end level, the
+    // noise) falls away over the release time
+    const rel = this.rel;
+    if (!this.gate && this.fade === 0) this.rel *= this.relC;
+
     // ---- FM operators, D down to A
     const algo = p[b + FM_P.algo] | 0;
     const mods = FM_ALG_MOD[algo];
@@ -516,7 +589,8 @@ class FmVoice {
       if (ph >= 1) ph -= 1;
       this.ph[o] = ph;
       const lvl = p[b + FM_P.lA + o * 5];
-      const e = (car >> o) & 1 ? env[o] : fmEnd + (1 - fmEnd) * env[o];
+      // a modulator settles at FM end while the note is held (the FM sustain) and goes to zero with the release
+      const e = (car >> o) & 1 ? env[o] : fmEnd * rel + (1 - fmEnd) * env[o];
       const y = fmSin(ph + m) * e * lvl;
       out[o] = y;
       if ((car >> o) & 1) {
@@ -528,7 +602,7 @@ class FmVoice {
     this.fbz = out[3];
     if (ncar > 1) body *= 1 / Math.sqrt(ncar);
 
-    // ---- amp env (applies to FM body)
+    // ---- amp env (applies to FM body): attack, hold, decay towards the sustain level, held there while the note is
     let a;
     if (this.ampStage === 0) {
       this.ampX += this.ampAtkInc;
@@ -545,12 +619,20 @@ class FmVoice {
         this.ampStage = 2;
       }
     } else if (this.ampStage === 2) {
+      const sus = p[b + FM_P.aSus];
       this.ampX += this.ampDecInc;
       if (this.ampX >= 1) {
-        this.ampStage = 3;
-        a = 0;
-      } else a = Math.pow(1 - this.ampX, this.ampK);
-    } else a = 0;
+        this.ampStage = sus > 0 ? 4 : 3;
+        a = sus;
+      } else a = sus + (1 - sus) * Math.pow(1 - this.ampX, this.ampK);
+    } else if (this.ampStage === 4) a = p[b + FM_P.aSus];
+    else a = 0;
+    a *= rel;
+    if (rel < 1e-4) { // released
+      a = 0;
+      this.ampStage = 3;
+      this.nEnv = 0;
+    }
     this.amp = a;
     body *= a;
 
@@ -582,7 +664,7 @@ class FmVoice {
     if (nl > 0 && this.nEnv > 1e-5) {
       this.nfilt.tick(this.rng.bi());
       const nt = p[b + FM_P.nType] | 0;
-      nz = (nt === 0 ? this.nfilt.lp : nt === 1 ? this.nfilt.bp : this.nfilt.hp) * this.nEnv * nl;
+      nz = (nt === 0 ? this.nfilt.lp : nt === 1 ? this.nfilt.bp : this.nfilt.hp) * this.nEnv * nl * rel;
     }
 
     // ---- sum, drive, filter
@@ -614,22 +696,15 @@ class FmVoice {
       x = Math.round(x * q) / q;
     }
 
-    // ---- level, pan
+    // ---- level
     const lv = p[b + FM_P.level] * this.velAmp * (1 - Math.abs(this.lLvl) * 0.5 + this.lLvl * 0.5);
     x *= lv;
     if (this.fade > 0) x *= this.fade / FM_FADE_N;
     this.mono = x;
-    let pan = p[b + FM_P.pan] + this.lPan;
-    pan = pan < -1 ? -1 : pan > 1 ? 1 : pan;
-    const pa = (pan + 1) * 0.125; // 0..0.25 cycles
-    this.L = x * fmSin(pa + 0.25);
-    this.R = x * fmSin(pa);
-    const ax = x < 0 ? -x : x;
-    this.meter = ax > this.meter ? ax : this.meter * 0.9995;
 
     // ---- retrigger fade done: start the new note
     if (this.fade > 0 && --this.fade === 0) {
-      this.start(p, b, this.pendVel);
+      this.start(this.pendHz, this.pendVel);
       return;
     }
 
@@ -644,4 +719,4 @@ class FmVoice {
   }
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { FmVoice, FM_PARAMS, FM_NP, FM_P, fmToNorm, fmFromNorm, fmDefaults, FM_ALGOS, FM_LFO_DESTS, FM_LFO_SHAPES, FM_FILTER_TYPES, FM_NOISE_TYPES, FM_CLICK_TYPES, FmRng, FmSvf, FmOnePole, fmSin, fmSoftclip, fmDecayCoef };
+if (typeof module !== 'undefined' && module.exports) module.exports = { FmVoice, fmNoteHz, FM_PARAMS, FM_NP, FM_P, fmToNorm, fmFromNorm, fmDefaults, FM_ALGOS, FM_LFO_DESTS, FM_LFO_SHAPES, FM_FILTER_TYPES, FM_NOISE_TYPES, FM_CLICK_TYPES, FmRng, FmSvf, FmOnePole, fmSin, fmSoftclip, fmDecayCoef };
