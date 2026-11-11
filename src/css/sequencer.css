@@ -1,0 +1,47 @@
+/* sequencer: banks and slots, side steppers, piano roll */
+.sq { display: grid; gap: 14px; align-content: start; }
+.sq-bank .seg button { padding: 5px 10px; font: 17px var(--font-mono); min-width: 30px; }
+.sq-bank .slots button { min-width: 30px; padding: 0; height: 26px; position: relative; }
+.sq-bank .slots button.used:not([aria-pressed=true]) { color: var(--hi); }
+.sq-bank .slots button[data-ch]:not([data-ch=""])::after { content: attr(data-ch); position: absolute; top: -7px; right: -3px; font: 12.5px/1 var(--font-body); padding: 1px 3px; border-radius: 2px; background: var(--hi); color: var(--glass); }
+.sq-bank .slots button.playing { outline: 2px solid var(--hi); outline-offset: -4px; }
+.chain-read { display: flex; align-items: center; gap: 8px; font: 17px var(--font-body); }
+.chain-read[hidden] { display: none; }
+.chain-read .arr { color: var(--mute); }
+.chain-read .now { background: var(--hi); color: var(--glass); padding: 0 3px; border-radius: 2px; }
+.chain-read button { padding: 0 7px; font-size: 19.5px; line-height: 20px; }
+.sq-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; align-items: start; }
+/* the strip over the roll: three rows with one kind of control each and a label column on the left, so everything lines up.
+   pattern: slots, copy/paste and the edits; shape: four sliders; generate: two sliders and its buttons. */
+.sq-row { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; }
+.sq-row > .rlab { flex: none; width: 66px; font-size: 16px; color: var(--mute); text-transform: lowercase; }
+.sld { display: grid; grid-template-columns: 66px 92px 40px; align-items: center; gap: 0 6px; font-size: 17px; text-transform: lowercase; margin-right: 6px; }
+.sld span { white-space: nowrap; }
+.sld output { text-align: left; font-size: 17px; font-variant-numeric: tabular-nums; }
+.sld input { width: 100%; }
+.acts { display: flex; flex-wrap: wrap; gap: 4px; margin-left: 6px; }
+.acts button { padding: 0 9px; font-size: 16px; height: 26px; }
+.seqwrap { overflow-x: auto; scrollbar-width: thin; }
+/* every step fits on screen, even 64 (Johnny): columns share the width instead of scrolling */
+.seq { display: grid; grid-template-columns: 40px repeat(var(--steps, 16), minmax(0, 1fr)); grid-auto-rows: 16px; width: 100%;
+  font: 14px var(--font-body); border: 1px solid var(--ink); background: var(--well); user-select: none; }
+.seq > * { border: 0; border-right: 1px solid var(--rulec); border-bottom: 1px solid var(--rulec); padding: 0; background: transparent; color: var(--mute); min-width: 0; display: flex; align-items: center; justify-content: center; font: inherit; }
+.seq .rh { justify-content: flex-start; padding-left: 4px; letter-spacing: .04em; background: transparent; color: var(--mute); border-right: 1px solid var(--ink); }
+.seq .bar { border-right-color: var(--rulec); }
+.seq .blk { background: var(--tint); }
+.seq .rh.blk { background: var(--tint2); color: var(--ink); }
+.seq .hd { color: var(--mute); background: var(--glass); }
+.seq .hd.cur { background: var(--hi); color: var(--glass); }
+.seq .gap { border-bottom: 1.5px solid var(--rulec); }
+.seq button { cursor: pointer; }
+.seq button { touch-action: none; } /* ghost steps too, or a touch drag into them pans instead of painting */
+.seq button:focus-visible { outline: 2px solid var(--fg); outline-offset: -3px; }
+.seq .cell.cur:not(.on) { background: var(--tint2); }
+.seq .cell.on { background: var(--on); box-shadow: inset 0 0 0 1px rgb(0 0 0 / .4); }
+.seq .cell.on.cur { background: var(--ink); }
+.seq [data-t=slide].on, .seq [data-t=accent].on { background: var(--hi); }
+/* steps past the pattern's end: dimmed, press one to extend the pattern to it */
+.seq .ghost { opacity: .32; }
+.seq .hd.ghost { opacity: .5; }
+.seq .cell.ghost:hover { opacity: .6; }
+.seq .end { border-right: 2px solid var(--hi); }

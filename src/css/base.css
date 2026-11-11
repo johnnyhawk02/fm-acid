@@ -1,0 +1,80 @@
+/* Layout: one quiet instrument page (knobs, transport, steps); everything else lives in the Options sheet.
+   Look (v45, from Johnny's SH-101 project): one pane of backlit orange LCD glass in a black bezel on a dark case.
+   One ink for the segments, a faint ghost of unlit ones, the offset shadow LCD type casts, a pixel font throughout.
+   Buttons are outlined boxes that invert when on. Deliberately single-theme: it is a lit LCD either way. */
+:root {
+  --case: #181412;
+  --bezel: #0b0c0a;
+  --glass: #f7962f;     /* orange backlit LCD */
+  --ink: #1c0a00;
+  --ghost: rgb(var(--ink-rgb) / .13);
+  --tint: rgb(var(--ink-rgb) / .08);
+  --tint2: rgb(var(--ink-rgb) / .2);
+  --rulec: rgb(var(--ink-rgb) / .4);
+  --shadow: 2px 2px 0 rgb(var(--ink-rgb) / .17);
+  --page: var(--case);
+  --bg: transparent;    /* device panel: the glass shows through */
+  --fg: var(--ink);
+  --mute: rgb(var(--ink-rgb) / .72);
+  --line: rgb(var(--ink-rgb) / .45);
+  --soft: var(--tint);
+  --on: var(--ink);     /* switched on, selected: segments lit */
+  --hi: var(--ink);     /* values, playhead */
+  --well: var(--tint);  /* inset fields and the step grid */
+  --font-body: "VT323", ui-monospace, "SF Mono", Menlo, monospace;
+  --font-mono: var(--font-body);
+  --knob: 48px;         /* every dial on the front, the effects and the mods */
+  --knob-part: 40px;    /* dials in Options › Circuit */
+  --kn-w: 78px;         /* width of an effect dial cell */
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html { background: var(--case) radial-gradient(120% 60% at 50% 0%, #2d2622, var(--case)) no-repeat; color: var(--fg); min-height: 100%; }
+body { margin: 0; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 28px 48px;
+  font-family: var(--font-body); font-size: 17px; line-height: 1.5; color: var(--fg); background: transparent; }
+.main { max-width: 1060px; margin: 0 auto; display: grid; gap: 10px; }
+h1, h2, h3 { font-family: var(--font-body); font-weight: 400; margin: 0; text-wrap: balance; }
+.label { font: 14px var(--font-body); letter-spacing: .02em; color: var(--mute); }
+.hint { color: var(--mute); font-size: 17px; }
+.status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+/* controls */
+button { font: 17px var(--font-body); color: var(--fg); background: transparent; border: 1px solid var(--ink); border-radius: 2px; padding: 4px 10px; cursor: pointer; }
+button:hover:not(:disabled) { background: var(--rulec); }
+button:disabled { opacity: .35; cursor: default; }
+select, input[type=text] { font: 17px var(--font-body); color: var(--fg); background: transparent; border: 1px solid var(--ink); border-radius: 2px; padding: 4px 10px; }
+input[type=text] { background: var(--well); }
+select option { background: var(--bg); color: var(--fg); }
+button:focus-visible, select:focus-visible, input:focus-visible, .knob:focus-visible { outline: 1px solid var(--hi); outline-offset: 2px; }
+.icon { width: 34px; height: 30px; padding: 0; display: grid; place-items: center; }
+.icon svg { width: 16px; height: 16px; fill: var(--fg); }
+.switch { width: 40px; height: 20px; padding: 0; position: relative; background: var(--well); border-radius: 10px; }
+.switch .thumb { position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--fg); transition: left .12s; }
+.switch[aria-checked=true] { background: var(--on); }
+.switch[aria-checked=true] .thumb { left: 22px; background: var(--ink); }
+.seg { display: inline-flex; border: 1px solid var(--ink); border-radius: 2px; overflow: hidden; }
+.seg button { background: transparent; border: 0; border-right: 1px solid var(--ink); border-radius: 0; }
+.seg button[aria-pressed=true], .seg button[aria-checked=true] { background: var(--on); color: var(--glass); }
+.onoff { min-width: 52px; }
+.onoff[aria-pressed=true] { background: var(--on); color: var(--glass); }
+.tabs { display: flex; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; border-bottom: 1px solid var(--ink); }
+.tabs button { flex: none; }
+.mtabs button, .otabs button, #ptabs button { background: var(--glass); border: 1px solid var(--ink); border-bottom: 0; border-radius: 3px 3px 0 0; font: 15.5px var(--font-body); letter-spacing: .02em; color: var(--mute); margin: 0; padding: 5px 14px; }
+.mtabs button[aria-selected=true], .otabs button[aria-selected=true], #ptabs button[aria-selected=true] { background: var(--on); color: var(--glass); border-bottom-color: transparent; }
+.tabs button .n { font: 14px var(--font-mono); margin-left: 4px; }
+
+/* dials: label above, ring in the middle, value below (as in Live) */
+.knob { touch-action: none; cursor: ns-resize; border-radius: 50%; }
+.knob svg { width: 100%; height: 100%; display: block; overflow: visible; }
+.knob svg .trk { stroke: var(--ghost); stroke-width: 3.6; stroke-linecap: butt; }
+.knob svg .arc { stroke: var(--hi); stroke-width: 3.6; stroke-linecap: butt; }
+.knob svg .ptr { stroke: var(--ink); stroke-width: 3; stroke-linecap: round; }
+.kn, .md, .pk { display: grid; justify-items: center; gap: 4px; text-align: center; min-width: 0; }
+.kn .knob, .md .knob { width: var(--knob); height: var(--knob); }
+.kn .name, .md .mname, .pk .ref { order: -1; font: 15.5px/1.2 var(--font-body); letter-spacing: 0; text-transform: none; color: var(--fg); }
+.kn .val, .md .val, .pk .val { font: 14.5px/1.2 var(--font-body); color: var(--fg); min-height: 0; }
+.kn .val, .md .val { transition: opacity .15s; }
+.md .val, .pk .val { cursor: pointer; white-space: nowrap; }
+.md .val.changed, .pk .val.changed { color: var(--on); font-weight: 400; }
+.kn .ref { display: none; }
+.kn.small .name { font-size: 16px; }

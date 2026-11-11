@@ -1,0 +1,80 @@
+/* control bar: transport, tempo, the three preset pickers, Functions, version, options */
+.top { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 14px; position: sticky; top: 0; z-index: 30; margin: -28px -16px 0; padding: 10px 16px;
+  background: transparent; border-bottom: 1px solid var(--ink); }
+.play .sq, .play[aria-pressed=true] .tri { display: none; }
+.play[aria-pressed=true] .sq { display: inline; }
+.play[aria-pressed=true] { background: var(--on); }
+.play[aria-pressed=true] svg { fill: var(--glass); }
+.bpm { display: flex; align-items: center; gap: 10px; }
+.bpm .knob { width: 30px; height: 30px; }
+.bpm-read { display: flex; align-items: baseline; gap: 6px; line-height: 1; }
+.bpm-read output { font: 18px/1 var(--font-body); background: var(--well); color: var(--hi); border: 1px solid var(--ink); border-radius: 2px; padding: 5px 8px; min-width: 4.2ch; text-align: center; }
+.top .hp { position: relative; flex: 1 1 120px; min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 0 10px; }
+.fn { position: relative; }
+.top .fn > button { font: 17px/1.2 var(--font-body); padding: 5px 10px; }
+.top .fn > button::after { content: " ▾"; font-size: 19.5px; }
+.fn-menu { position: absolute; z-index: 40; top: calc(100% + 4px); right: 0; min-width: 220px; display: grid; padding: 4px 0;
+  background: var(--glass); border: 1px solid var(--ink); border-radius: 3px; box-shadow: 0 6px 20px rgb(var(--ink-rgb) / .3); }
+.fn-menu[hidden] { display: none; }
+.fn-menu button { border: 0; background: transparent; text-align: left; padding: 6px 12px; font: 17px/1.4 var(--font-body); white-space: nowrap; }
+.fn-menu button:disabled { opacity: .4; }
+.fn-menu button:not(:disabled):hover, .fn-menu button:focus-visible { background: var(--hi) !important; color: var(--glass) !important; outline: 0; }
+/* short messages from Functions, Generate and the like, under the bar */
+.sq-msg { position: absolute; right: 16px; top: calc(100% + 6px); max-width: min(560px, calc(100% - 32px)); padding: 6px 10px; font: 17px/1.4 var(--font-body); color: var(--fg); pointer-events: none;
+  background: var(--glass); border: 1px solid var(--ink); border-radius: 3px; box-shadow: 0 6px 20px rgb(var(--ink-rgb) / .3); }
+.sq-msg:empty { display: none; }
+.ver { font: 14.5px var(--font-body); color: var(--mute); white-space: nowrap; margin-left: auto; font-variant-numeric: tabular-nums; }
+.gear { background: transparent; border-color: transparent; }
+.ver + .gear { margin-left: 0; }
+.gear svg { width: 20px; height: 20px; }
+
+/* preset picker: our own listbox over a hidden <select>, with folders, search, filter chips and stars */
+.pm { position: relative; flex: 1 1 100%; display: flex; min-width: 0; }
+.pm .pm-btn { flex: 1; min-width: 0; display: flex; justify-content: space-between; gap: 10px; text-align: left; font: 17px/1.2 var(--font-body); padding: 5px 10px; background: var(--well); }
+.pm-btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pm-btn .cur { flex: 1 1 auto; min-width: 0; }
+.pm .pm-btn .cur { color: var(--fg); }
+.pm .pm-step { padding: 0 8px; font-size: 12.5px; border-left-width: 0; }
+.pm-pop { position: absolute; z-index: 40; top: calc(100% + 4px); left: 0; right: 0; min-width: 280px; max-height: min(62vh, 460px);
+  display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr);
+  background: var(--glass); border: 1px solid var(--ink); border-radius: 3px; box-shadow: 0 6px 20px rgb(var(--ink-rgb) / .3); }
+.pm-pop[hidden] { display: none; }
+.pm-head { display: grid; min-width: 0; }
+.pm .pm-qrow { display: flex; gap: 6px; margin: 8px; }
+.pm .pm-q { flex: 1; min-width: 0; font: 17px var(--font-body); padding: 5px 8px; }
+.pm-list { overflow-y: auto; overscroll-behavior: contain; padding: 0 0 6px; scrollbar-width: thin; scrollbar-color: var(--fg) transparent; }
+.pm .pm-g { display: flex; width: 100%; border: 0; border-top: 1px solid var(--rulec); padding: 6px 10px; padding-left: calc(10px + var(--d, 0) * 14px); background: transparent;
+  font: 14.5px var(--font-body); letter-spacing: .03em; text-align: left; }
+.pm .pm-g.sub { font-weight: 400; color: var(--fg); border-top-color: transparent; }
+.pm-g::before { content: "▸"; margin-right: 8px; }
+.pm-g[aria-expanded=true]::before { content: "▾"; }
+.pm-g .n { margin-left: auto; color: var(--mute); font-weight: 400; }
+.pm-row { display: flex; align-items: stretch; }
+.pm .pm-i { width: 100%; border: 0; padding: 2px 12px; background: transparent; text-align: left; font: 17px/1.6 var(--font-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pm-row .pm-i { flex: 1; min-width: 0; padding-left: calc(12px + var(--d, 0) * 14px); display: flex; gap: 8px; align-items: baseline; }
+.pm .pm-i[aria-selected=true] { background: var(--on); color: var(--glass); }
+.pm-i.act, .pm-i:hover, .pm-g.act { background: var(--tint); }
+.pm-path { margin-left: auto; color: var(--mute); font-size: 14px; flex: none; }
+.pm-i[aria-selected=true] .pm-path { color: var(--glass); }
+.pm .pm-star { flex: none; width: 28px; padding: 0; border: 0; background: transparent; color: var(--rulec); font-size: 17px; }
+.pm .pm-star:hover { color: var(--fg); }
+.pm .pm-star[aria-pressed=true] { color: var(--on); }
+.pm-sum { padding: 4px 12px 6px; font-size: 14.5px; color: var(--mute); }
+.pm-sep { border-top: 1px solid var(--rulec); margin: 4px 0; }
+.pm-none { padding: 10px 12px; color: var(--mute); }
+/* save / delete row at the foot of the picker */
+.presets { display: flex; flex-wrap: wrap; gap: 10px 12px; align-items: center; }
+.presets select { min-width: 200px; max-width: 100%; }
+.presets input[type=text] { width: 180px; max-width: 100%; }
+.presets .hint { flex-basis: 100%; }
+.pm-foot { display: none; }
+.pm-pop .pm-foot { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px; border-top: 1.5px solid var(--fg); }
+.pm-foot input[type=text] { flex: 1 1 140px; min-width: 0; font-size: 17px; padding: 5px 8px; }
+.pm-foot button { padding: 5px 10px; font-size: 17px; }
+.pm-foot .hint:empty { display: none; }
+.top .hp[hidden] { display: none; }
+.pm-opt { display: inline-flex; align-items: center; gap: 5px; font-size: 17px; cursor: pointer; }
+.pm-foot #prj-roll { padding: 5px 8px; }
+.pm .pm-favf { padding: 0 10px; font-size: 19.5px; line-height: 1; opacity: .6; }
+.pm .pm-favf[aria-pressed=true] { opacity: 1; }
+.pm .pm-favf[aria-pressed=true] { color: var(--on); border-color: var(--on); }

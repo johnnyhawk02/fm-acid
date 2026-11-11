@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>303 Circuit Model</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#181412">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="icon" href="icons/icon-192.png" sizes="192x192">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="303">
+<style>@font-face { font-family: 'VT323'; font-style: normal; font-weight: 400; font-display: block; src: url(fonts/VT323-Regular.ttf) format('truetype'); }</style>
+<script>
+// Inside the VST3 plug-in (plugin/) this page is the plug-in's screen: the plug-in hands it its saved storage and takes
+// the engine messages, and the DAW's transport and tempo replace the Play button and Tempo dial. In a browser this is null.
+const tbPlugin = (() => {
+  const J = window.__JUCE__, d = J && J.initialisationData && J.initialisationData.tb303 && J.initialisationData.tb303[0];
+  if (!d || !J.backend) return null;
+  document.documentElement.dataset.plugin = '';
+  const emit = (m) => J.backend.emitEvent('tb303', m), data = new Map(Object.entries(d.store || {}));
+  const storage = { // a Storage the plug-in keeps (its own state for this instance, and a library shared by every instance)
+    getItem: (k) => data.has(k) ? data.get(k) : null,
+    setItem: (k, v) => { v = String(v); data.set(k, v); emit({ type: 'store', key: k, value: v }); },
+    removeItem: (k) => { data.delete(k); emit({ type: 'store', key: k, value: null }); },
+    key: (i) => [...data.keys()][i] ?? null,
+    get length() { return data.size; },
+  };
+  return { info: d, storage, send: emit, on: (fn) => J.backend.addEventListener('tb303', fn) };
+})();
+const tbStore = tbPlugin ? tbPlugin.storage : (() => { try { return localStorage; } catch { return null; } })();
+</script>
+<script>try { const r = document.documentElement, t = JSON.parse(tbStore.getItem('tb303.lcdTheme')), v = JSON.parse(tbStore.getItem('tb303.lcdVars')); if (typeof t === 'string') r.dataset.lcd = t; if (JSON.parse(tbStore.getItem('tb303.lcdMode')) !== 'mono') r.dataset.lcdmode = 'colour'; if (v) for (const k in v) r.style.setProperty(k, v[k]); } catch {}</script>
+<style>
+/*@css*/
+</style>
+<div class="rotate" role="note"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2.5" width="10" height="19" rx="2"/><path d="M11 18.5h2"/></svg><p>Turn sideways for a bigger view</p></div>
+<div class="main">
+  <header class="top">
+    <h1 class="status">303 circuit model</h1>
+    <button class="icon play" id="play" type="button" aria-label="Play"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="tri" d="M7 4.5 L19.5 12 L7 19.5 Z"/><rect class="sq" x="6" y="6" width="12" height="12"/></svg></button>
+    <button class="seqbtn" id="seq-on" type="button" aria-pressed="true" aria-label="Sequencer on">seq</button>
+    <div class="bpm">
+      <div class="knob" id="bpm" tabindex="0" role="slider" aria-label="Tempo" aria-valuemin="60" aria-valuemax="200"></div>
+      <div class="bpm-read"><output id="bpm-val">128</output><span class="label">BPM</span></div>
+    </div>
+    <div class="hp presets" id="prj-bar">
+      <span class="label">Preset</span>
+      <select id="prj-preset" aria-label="Presets" hidden></select><div class="pm" data-for="prj-preset"></div>
+      <div class="pm-foot">
+        <input id="prj-name" type="text" placeholder="Save everything as…" maxlength="40" aria-label="Preset name">
+        <button type="button" id="prj-roll" title="Another name" aria-label="Suggest another name">🎲</button>
+        <button type="button" id="prj-save">Save</button>
+        <button type="button" id="prj-del">Delete</button>
+        <button type="button" id="prj-export" title="Saves every preset under My presets to one file. Import file loads them all back in.">Export all</button>
+        <button type="button" id="prj-exfav" title="Saves every starred preset, factory and your own, to one file in the same format as Export all.">Export favourites</button>
+        <button type="button" id="prj-import">Import file</button>
+        <label class="pm-opt" title="Loading a preset changes only the sound and effects, and keeps your patterns and tempo"><input type="checkbox" id="prj-sndonly"> Sound only</label>
+        <input type="file" id="prj-file" accept=".json,application/json" hidden>
+        <span class="hint" id="prj-msg" role="status"></span>
+      </div>
+    </div>
+    <span class="sq-msg" id="sq-msg" role="status"></span>
+    <span class="ver" id="ver" title="Build __BUILD_SHA__, __BUILD_DATE__">__BUILD_VERSION__</span>
+    <button type="button" class="icon gear" id="open-options" aria-haspopup="dialog" aria-label="Options"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.3 2h3.4l.5 2.6 1.9.8 2.2-1.5 2.4 2.4-1.5 2.2.8 1.9 2.6.5v3.4l-2.6.5-.8 1.9 1.5 2.2-2.4 2.4-2.2-1.5-1.9.8-.5 2.6h-3.4l-.5-2.6-1.9-.8-2.2 1.5-2.4-2.4 1.5-2.2-.8-1.9L2 13.7v-3.4l2.6-.5.8-1.9-1.5-2.2 2.4-2.4 2.2 1.5 1.9-.8z M12 8.4a3.6 3.6 0 1 0 0 7.2a3.6 3.6 0 1 0 0-7.2z" fill-rule="evenodd"/></svg></button>
+    <span class="status" id="status" role="status">Stopped</span>
+  </header>
+
+  <div class="panel dev" id="panel" data-title="303 Voice"></div>
+
+  <div class="tabs mtabs" id="mtabs" role="tablist" aria-label="Sections">
+    <button type="button" role="tab" data-pane="seq">Sequencer</button>
+    <button type="button" role="tab" data-pane="mods">Mods</button>
+    <button type="button" role="tab" data-pane="fx">FX</button>
+    <button type="button" role="tab" data-pane="tune">Tuning</button>
+  </div>
+
+  <section class="sq pane" id="pane-seq" data-title="Sequencer" role="tabpanel" aria-label="Sequencer">
+    <div class="sq-body">
+      <!-- controls above the roll (the pattern and what you do to it) and below it (a long Length slider; Gate is a menu beside Tools); Generate lives in the Randomise menu (key G) -->
+      <div class="sq-row sq-bank">
+        <span class="rlab">pattern</span>
+        <div class="seg slots" id="bk-n" role="group" aria-label="Pattern slot"><button type="button" data-n="0" aria-pressed="false">1</button><button type="button" data-n="1" aria-pressed="false">2</button><button type="button" data-n="2" aria-pressed="false">3</button><button type="button" data-n="3" aria-pressed="false">4</button><button type="button" data-n="4" aria-pressed="false">5</button><button type="button" data-n="5" aria-pressed="false">6</button><button type="button" data-n="6" aria-pressed="false">7</button><button type="button" data-n="7" aria-pressed="false">8</button></div>
+        <div class="chain-read" id="chain-read" hidden><span class="label">Chain</span><span class="ch-list"></span><button type="button" id="chain-clear" aria-label="Clear chain">×</button></div>
+        <div class="fn rmenu"><button type="button" id="rm-btn" aria-haspopup="menu" aria-expanded="false" title="Randomise, alter, shuffle and generate the pattern">Randomise</button><div class="fn-menu" id="rm-menu" role="menu" hidden>
+          <span class="mh">randomise</span>
+          <button type="button" role="menuitem" data-rm="r-acc" title="New random accents on the notes, mostly on the beat; the notes, slides and octaves stay">Accents</button>
+          <button type="button" role="menuitem" data-rm="r-sld" title="New random slides into the next played note, most across octave jumps; the notes, accents and octaves stay">Slides</button>
+          <button type="button" role="menuitem" data-rm="r-oct" title="A new register for the riff with the odd octave jump; the notes themselves, accents and slides stay">Octaves</button>
+          <span class="mh">alter</span>
+          <button type="button" role="menuitem" data-rm="a-acc" title="Vary the accents: about a quarter of the notes gain or lose an accent; again for more">Accents</button>
+          <button type="button" role="menuitem" data-rm="a-sld" title="Vary the slides: about a quarter of the notes gain or lose a slide; again for more">Slides</button>
+          <button type="button" role="menuitem" data-rm="a-oct" title="Vary the octaves: about a quarter of the notes jump an octave up or down; again for more">Octaves</button>
+          <button type="button" role="menuitem" data-rm="alter" title="Vary the whole pattern: about a quarter of the steps change note (staying in the pattern's key), octave, accent, slide or rest">Whole pattern</button>
+          <span class="mh">pattern</span>
+          <button type="button" role="menuitem" data-rm="p-shuf" title="Deal the beats (groups of 4 steps) out in a new order, so each beat keeps its groove; short or odd-length patterns shuffle single steps">Shuffle steps</button>
+          <button type="button" role="menuitem" id="rand" title="New pattern from a random factory one, looped, reversed, doubled or shuffled; the length stays">Generate</button>
+          <button type="button" role="menuitem" id="p-refill" title="Give every slot you have not edited a new generated pattern">Refill slots</button>
+        </div></div>
+        <div class="fn rmenu"><button type="button" id="tm-btn" aria-haspopup="menu" aria-expanded="false" title="Copy, paste, double, clear, undo and move the notes">Tools</button><div class="fn-menu" id="tm-menu" role="menu" hidden>
+          <span class="mh">pattern</span>
+          <button type="button" role="menuitem" id="p-copy" title="Copy this pattern">Copy</button>
+          <button type="button" role="menuitem" id="p-paste" title="Paste over this pattern" disabled>Paste</button>
+          <button type="button" role="menuitem" id="p-dup" title="Repeat the pattern until it fills 16 steps, or 32 if it is already 16 or more">Double</button>
+          <button type="button" role="menuitem" id="p-clear" title="Clear every step of this pattern">Clear</button>
+          <button type="button" role="menuitem" id="p-undo" title="Undo the last change to a pattern" disabled>Undo</button>
+          <span class="mh">move notes</span>
+          <button type="button" role="menuitem" data-rm="nu-up" title="Every note up a semitone">Up a semitone</button>
+          <button type="button" role="menuitem" data-rm="nu-dn" title="Every note down a semitone">Down a semitone</button>
+          <button type="button" role="menuitem" data-rm="nu-oup" title="Every note up an octave">Up an octave</button>
+          <button type="button" role="menuitem" data-rm="nu-odn" title="Every note down an octave">Down an octave</button>
+          <button type="button" role="menuitem" data-rm="rot-l" title="Shift the pattern a step left (the first step goes to the end)">Shift a step left</button>
+          <button type="button" role="menuitem" data-rm="rot-r" title="Shift the pattern a step right (the last step comes to the front)">Shift a step right</button>
+          <span class="mh">chain</span>
+          <button type="button" role="menuitem" data-rm="join" title="Join every chained pattern into one and copy it, ready to paste into a slot">Join chain and copy</button>
+        </div></div>
+        <!-- Gate (Johnny: "call it gate", was the Step len slider): how long each note sounds, picked from a menu like Randomise and Tools; items drawn by renderSide -->
+        <div class="fn rmenu gmenu"><button type="button" id="gm-btn" aria-haspopup="menu" aria-expanded="false" title="Gate: how long each note sounds, as a share of the step">Gate <span id="o-gate">50%</span></button><div class="fn-menu" id="gm-menu" role="menu" hidden></div></div>
+      </div>
+      <div class="seqwrap"><div class="seq" id="seq" role="grid" aria-label="Pattern"></div></div>
+      <div class="sq-foot"><div class="sq-foot-rows">
+      <div class="sq-row sq-side">
+        <label class="sld len"><span>Length</span><input type="range" data-a="len" min="1" max="64" step="1" aria-label="Pattern length"><output id="o-len">16</output></label>
+      </div></div>
+        <!-- Density (Johnny: "needs a density knob"): how many steps Generate and Refill fill with notes -->
+        <div class="sq-dens"><span class="dname">density</span><div class="knob" id="sq-dens" tabindex="0" role="slider" aria-label="Density" aria-valuemin="10" aria-valuemax="100" title="Density: how many steps Generate and Refill fill with notes (Alter leans towards it too); double-click for 60%"></div><output id="o-dens">60%</output></div>
+        <!-- a cross of four (Johnny): up and down move every note a semitone (Shift for an octave), left and right shift the pattern a step -->
+        <div class="nudge dpad" role="group" aria-label="Move the notes">
+          <button type="button" class="dp-up" data-nudge="1" title="Every note up a semitone, Shift-click for an octave" aria-label="Notes up">▲</button>
+          <button type="button" class="dp-lt" data-rot="-1" title="Shift the pattern a step left (the first step goes to the end)" aria-label="Shift the pattern left">◀</button>
+          <button type="button" class="dp-rt" data-rot="1" title="Shift the pattern a step right (the last step comes to the front)" aria-label="Shift the pattern right">▶</button>
+          <button type="button" class="dp-dn" data-nudge="-1" title="Every note down a semitone, Shift-click for an octave" aria-label="Notes down">▼</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="pane" data-title="Mods" id="pane-mods" role="tabpanel" aria-label="Mods" hidden><div class="mods" id="mods" aria-label="Common mods"></div></div>
+
+  <div class="pane tupane" data-title="Tuning" id="pane-tune" role="tabpanel" aria-label="Tuning" hidden>
+    <div class="sq-row tu-top">
+      <span class="rlab">tuning</span>
+      <div class="acts" id="tu-sys">
+        <button type="button" data-t="just" aria-pressed="false" title="Pure intervals from the root (5-limit just intonation): thirds and fifths beat-free, far keys sour">Just</button>
+        <button type="button" data-t="pyth" aria-pressed="false" title="Pure fifths from the root: bright, wide major thirds">Pythagorean</button>
+        <button type="button" data-t="mean" aria-pressed="false" title="Quarter-comma meantone from the root: pure major thirds, one howling wolf fifth">Meantone</button>
+        <button type="button" data-t="drift" title="Every note a few cents out at random, like an old unit whose DAC has drifted">Drift</button>
+      </div>
+      <div class="acts tu-end"><button type="button" id="tu-reset" title="Every note back to 0 cents: equal temperament, the stock 303">Reset</button><button type="button" id="tu-undo" disabled>Undo</button></div>
+    </div>
+    <div class="tu-faders" id="tu-faders" role="group" aria-label="Fine tune of each note, in cents, the same in every octave"></div>
+    <div class="sq-row tu-foot">
+      <span class="rlab">root</span>
+      <div class="seg slots" id="tu-root" role="group" aria-label="Root of the temperament"><button type="button" data-r="0" aria-pressed="false">c</button><button type="button" data-r="1" aria-pressed="false">c♯</button><button type="button" data-r="2" aria-pressed="false">d</button><button type="button" data-r="3" aria-pressed="false">d♯</button><button type="button" data-r="4" aria-pressed="false">e</button><button type="button" data-r="5" aria-pressed="false">f</button><button type="button" data-r="6" aria-pressed="false">f♯</button><button type="button" data-r="7" aria-pressed="false">g</button><button type="button" data-r="8" aria-pressed="false">g♯</button><button type="button" data-r="9" aria-pressed="false">a</button><button type="button" data-r="10" aria-pressed="false">a♯</button><button type="button" data-r="11" aria-pressed="false">b</button></div>
+    </div>
+  </div>
+
+  <div class="pane fxpane" data-title="Effects" id="pane-fx" role="tabpanel" aria-label="Effects" hidden>
+    <section class="fxb" id="fx-fold" aria-label="West coast wavefolder" title="West coast timbre circuit: five folding cells and a direct path (Esqueda et al., DAFx-17), ahead of the drive. Timbre is the gain into the cells, Symmetry a DC offset.">
+      <div class="fxh"><button type="button" class="onoff" id="fx-fold-on" aria-pressed="false">Off</button><span class="fxname">Folder</span><span class="fxsub">west coast timbre</span></div>
+      <div class="fxknobs" id="fx-fold-knobs"></div>
+    </section>
+    <section class="fxb" id="fx-rat" aria-label="Drive">
+      <div class="fxh"><button type="button" class="onoff" id="fx-rat-on" aria-pressed="false">Off</button><span class="fxname">Drive</span>
+        <div class="fn rmenu tmenu" id="drv-type" data-label="Drive pedal"></div></div>
+      <div class="fxknobs" id="fx-rat-knobs"></div>
+    </section>
+    <section class="fxb" id="fx-dly" aria-label="Digital delay">
+      <div class="fxh"><button type="button" class="onoff" id="fx-dly-on" aria-pressed="false">Off</button><span class="fxname">Delay</span><span class="fxsub">tempo synced, tone on the repeats</span>
+        <div class="seg cmp-mode" id="dly-mode" role="radiogroup" aria-label="Delay mode"><button type="button" role="radio" data-m="1">Ping-pong</button><button type="button" role="radio" data-m="0">Mono</button></div></div>
+      <div class="fxknobs" id="fx-dly-knobs"></div>
+    </section>
+    <section class="fxb blk-cmp" id="fx-cmp" aria-label="Ducker" title="Ducks the delay and reverb returns when the synth plays. Amount: how deep and how easily it ducks. Release: how fast the returns come back.">
+      <div class="fxh"><span class="fxname">Ducker</span><span class="fxsub">ducks the returns under the synth</span></div>
+      <div class="fxknobs" id="fx-cmp-knobs"></div>
+    </section>
+    <div class="fx-row2">
+    <section class="fxb blk-lex" id="fx-lex" aria-label="Reverb">
+      <div class="fxh lex-head">
+        <button type="button" class="onoff" id="fx-lex-on" aria-pressed="false">Off</button>
+        <span class="fxname">Reverb</span>
+        <div class="fn rmenu tmenu" id="rev-type" data-label="Reverb type"></div>
+        <div class="fn rmenu tmenu" id="rev-prog" data-label="Program"></div>
+      </div>
+      <div class="fxknobs" id="fx-lex-knobs"></div>
+    </section>
+    <section class="fxb" id="fx-flg" aria-label="Flanger">
+      <div class="fxh"><button type="button" class="onoff" id="fx-flg-on" aria-pressed="false">Off</button>
+        <div class="seg cmp-mode" id="flg-mode" role="radiogroup" aria-label="Flanger mode"><button type="button" role="radio" data-m="0">Flanger</button><button type="button" role="radio" data-m="1">Chorus</button></div></div>
+      <div class="fxknobs" id="fx-flg-knobs"></div>
+    </section>
+    </div>
+    <section class="fxb blk-route" id="fx-route" aria-label="FX routing">
+      <svg class="route-dia" id="route-dia" viewBox="0 0 560 60" role="group" aria-label="Signal path through the effects. Click a block to switch it on or off."></svg>
+      <div class="route-ctl">
+        <div class="seg" id="route-order" role="radiogroup" aria-label="Folder and drive order"><button type="button" role="radio" data-v="0" title="The folder first, then the drive pedal (the stock order)">fold → drive</button><button type="button" role="radio" data-v="1" title="The drive pedal first, then the folder: folds the clipped wave">drive → fold</button></div>
+        <div class="seg" id="route-ret" role="radiogroup" aria-label="Delay and reverb routing"><button type="button" role="radio" data-v="0" title="Delay and reverb both fed from the synth, side by side (the stock routing)">parallel</button><button type="button" role="radio" data-v="0.5" title="The delay feeds the reverb: the echoes are reverberated">dly → rev</button><button type="button" role="radio" data-v="1" title="The reverb feeds the delay: the reverb tail is echoed">rev → dly</button></div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<dialog id="options" aria-labelledby="opt-title">
+  <div class="opt-head">
+    <h2 id="opt-title">Options</h2>
+    <div class="tabs otabs" id="otabs" role="tablist" aria-label="Options sections"><button type="button" role="tab" data-sec="midi" aria-selected="true">MIDI</button><button type="button" role="tab" data-sec="colours" aria-selected="false">Colours</button><button type="button" role="tab" data-sec="about" aria-selected="false">About</button></div>
+    <button type="button" class="icon xbtn" id="close-options" aria-label="Close options"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5 L19 19 M19 5 L5 19" stroke="currentColor" stroke-width="2.4" stroke-linecap="square" fill="none"/></svg></button>
+  </div>
+  <div class="opt-body">
+    <section class="osec" id="osec-midi" role="tabpanel" aria-label="MIDI">
+      <p class="hint" id="midi-status">Front-panel dials follow MIDI CC from any input, on any channel.</p>
+      <dl class="readouts" id="midi-map"></dl>
+    </section>
+    <section class="osec" id="osec-colours" role="tabpanel" aria-label="Colours" hidden>
+      <div class="lcd-mode"><span>mode</span><div class="seg" id="lcd-mode" role="group" aria-label="Screen colour mode"><button type="button" data-mode="mono" aria-pressed="false">Mono</button><button type="button" data-mode="colour" aria-pressed="true">Grey + colour</button></div></div>
+      <div class="lcd-swatches" id="lcd-swatches" role="radiogroup" aria-label="Screen colour"></div>
+      <div class="lcd-look" id="lcd-look">
+        <label class="sld"><span>Brightness</span><input type="range" data-look="bright" min="-50" max="50" step="1" value="0" aria-label="Screen brightness"><output>0</output></label>
+        <label class="sld"><span>Saturation</span><input type="range" data-look="sat" min="0" max="200" step="1" value="100" aria-label="Screen saturation"><output>100%</output></label>
+        <label class="sld"><span>Dirt</span><input type="range" data-look="dirt" min="0" max="200" step="1" value="0" aria-label="Dirt on the glass"><output>0%</output></label>
+        <label class="sld"><span>Grain</span><input type="range" data-look="grain" min="0" max="250" step="1" value="100" aria-label="Pixel grain"><output>100%</output></label>
+        <button type="button" id="lcd-look-reset">Reset</button>
+      </div>
+    </section>
+    <section class="osec" id="osec-about" role="tabpanel" aria-label="About" hidden>
+      <div class="opt-install"><button type="button" id="opt-install">Install app</button><span id="opt-install-msg" role="status"></span></div>
+      <div class="notes">
+        <p><strong>303 Circuit Model</strong> <span class="about-ver"></span>, by Johnny. Free and open source under the GNU AGPL v3, with no warranty. Source, licence, downloads and bug reports: github.com/johnnyhawk02/tb303-circuit-model.</p>
+        <p><strong>Privacy.</strong> No accounts, no tracking, nothing sent anywhere. Your presets and settings stay in this browser (in the plug-in, in one file on your computer).</p>
+        <p><strong>Trademarks.</strong> Not affiliated with or endorsed by Roland, Behringer or the makers of any gear it is modelled on. Product names belong to their owners and are mentioned only to describe the circuits.</p>
+        <p><strong>Source.</strong> The original 1982 main board schematic, with values that sheet does not show clearly read from a modern clone's schematic. Parts on neither sheet are estimates. Running at <span id="rate">2× oversampling</span>.</p>
+        <p><strong>Pitch and VCO.</strong> A 6-bit R-2R ladder from 5.333 V gives 1/12 V per step. An exponential current charges C33 from 5.5 V to 12 V, then resets, smoothed with a polyBLEP.</p>
+        <p><strong>VCF.</strong> Four coupled ladder stages with a tanh law per transistor pair, 18n bottom cap and 33n above, solved implicitly. Full feedback (k = 17) self-oscillates.</p>
+        <p><strong>Envelopes and VCA.</strong> C62 decays through R138 + VR6 (200 ms to 2.5 s). Accent shorts VR6 and charges the sweep cap. The OTA VCA gets resonance compensation through C76/R100, and normal notes fade in through R_SOFT.</p>
+        <p><strong>Mods.</strong> The Mods page parts map mostly to the controls of the best-known 303 mod kits: Normal and Accent decay, VEG decay, Soft attack, Slide time, Sweep speed and self-oscillating resonance.</p>
+        <p><strong>Digital 224.</strong> Runs on its own 20 kHz clock with 12-bit gain-ranging converters, 16-bit words and a shared 32K-word delay memory. The core is Dattorro's published Griesinger-style plate network; the original unit's microcode is not public, so the hall, chamber, room and chorus variants are estimates.</p>
+        <p><strong>Plate, Spring, Convolution.</strong> The other reverbs on the same slot: Dattorro's published plate as he gives it, a dispersive spring tank after Välimäki, Parker and Abel (stretched allpasses in a delay loop), and partitioned FFT convolution of real impulse responses (below) plus generated ones.</p>
+        <p><strong>Convolution IRs.</strong> Plate impulse responses by Greg Hopkins (CC BY). Room, silo, garage, Musikverein and On a Star impulse responses from Voxengo, free for any use. Trimmed to 3 s at 48 kHz; see irs/CREDITS.md.</p>
+        <p><strong>Rodent drive.</strong> LM308 stage with gain-bandwidth and slew limits from its 30p cap, 1N914 diodes to ground, then the 3.3n filter.</p>
+      </div>
+    </section>
+  </div>
+</dialog>
+
+<!-- a dial's own step sequencer (ctlseq.js): long-press or right-click a dial -->
+<dialog id="cseq" aria-labelledby="cseq-title">
+  <div class="cs-head">
+    <h2 id="cseq-title"><span id="cseq-name">cutoff</span> seq</h2>
+    <button type="button" class="onoff" id="cseq-on" aria-pressed="true">On</button>
+    <output class="cs-val" id="cseq-val" aria-live="off">step 1  0%</output>
+  </div>
+  <div class="seg cs-pages" id="cseq-pages" role="tablist" aria-label="Step pages"></div>
+  <div class="cs-steps" id="cseq-steps" tabindex="0" role="slider" aria-label="Steps: drag to paint; Left and Right pick a step, Up and Down move it" aria-valuemin="-100" aria-valuemax="100"></div>
+  <div class="cs-bars" id="cseq-bars">
+    <label class="sld"><span>length</span><input type="range" id="cseq-len" min="2" max="64" step="1" aria-label="Sequence length"><output id="cseq-len-out">16</output></label>
+    <label class="sld"><span>slew</span><input type="range" id="cseq-slew" min="0" max="100" step="5" aria-label="Slew: glide to each step"><output id="cseq-slew-out">off</output></label>
+    <label class="sld"><span>speed</span><input type="range" id="cseq-speed" min="0" max="7" step="1" aria-label="Speed: how long each step lasts"><output id="cseq-speed-out">1/16</output></label>
+    <label class="sld"><span>depth</span><input type="range" id="cseq-depth" min="0" max="100" step="5" aria-label="Depth: how far the steps move the dial"><output id="cseq-depth-out">±50%</output></label>
+  </div>
+  <div class="cs-foot">
+    <button type="button" id="cseq-rand">Randomise</button>
+    <button type="button" id="cseq-kind" aria-label="Kind of randomise (click for the next)">random</button>
+    <button type="button" id="cseq-done">Done</button>
+  </div>
+</dialog>
+
+<!-- the voice model: used here for readouts and the fallback engine, and loaded again into the AudioWorklet -->
+<script id="model">
+/*@model*/
+</script>
+<script id="worklet-src" type="text/plain">
+/*@worklet*/
+</script>
+<script>
+(() => {
+/*@app*/
+})();
+</script>

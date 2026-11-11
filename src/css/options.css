@@ -1,0 +1,39 @@
+/* options sheet: a fixed-size dialog, so switching tabs never resizes it */
+dialog#options { width: min(940px, calc(100vw - 32px)); max-width: none; height: fit-content; min-height: 0; max-height: min(720px, calc(100dvh - 32px)); margin: clamp(16px, 9vh, 90px) auto auto; padding: 0;
+  flex-direction: column; overflow: hidden; background: var(--bg); color: var(--fg); border: 1px solid var(--ink); border-radius: 4px; box-shadow: 0 20px 60px rgb(0 0 0 / .6); }
+dialog#options[open] { display: flex; }
+dialog#options::backdrop { background: rgb(var(--ink-rgb) / .3); }
+.opt-head { flex: none; display: flex; align-items: flex-end; gap: 8px 26px; padding: 14px 14px 0 22px; background: var(--glass); border-bottom: 1px solid var(--ink); }
+.opt-head h2 { font: 21px var(--font-body); letter-spacing: .04em; padding-bottom: 8px; }
+.opt-head .otabs { border-bottom: 0; flex: 1; min-width: 0; }
+.otabs button { margin-bottom: -1px; }
+.xbtn { align-self: center; margin-bottom: 6px; border-color: transparent; }
+.opt-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 22px 22px 28px; scrollbar-width: thin; scrollbar-color: var(--fg) transparent; }
+.osec { display: grid; gap: 16px; align-content: start; min-width: 0; }
+.osec[hidden] { display: none; }
+
+/* MIDI: the CC map */
+.readouts { display: grid; grid-template-columns: auto 1fr; gap: 5px 14px; align-content: start; margin: 0; font: 16px var(--font-body); }
+.readouts dt { color: var(--mute); }
+.readouts dd { margin: 0; font-variant-numeric: tabular-nums; color: var(--hi); }
+#midi-map { grid-template-columns: repeat(3, auto 1fr); gap: 6px 14px; }
+
+/* About */
+.notes { columns: 2 300px; column-gap: 32px; color: var(--mute); font-size: 18px; }
+.notes p { margin: 0 0 10px; break-inside: avoid; }
+.notes strong { color: var(--fg); font-weight: 400; }
+
+/* Colours: one swatch per LCD theme, each a small piece of its own glass with its name in its own ink */
+.lcd-swatches { display: grid; grid-template-columns: repeat(6, 1fr); gap: 14px; }
+dialog#options #osec-colours .lcd-swatches button.sw[data-lcd] { display: grid; justify-items: start; align-content: space-between; gap: 10px; height: 92px; padding: 10px 12px;
+  background: var(--glass); color: var(--ink); border: 2px solid var(--ink); border-radius: 4px; text-shadow: none;
+  font-size: var(--fs-m); text-transform: lowercase; letter-spacing: .02em; box-shadow: 2px 2.2px 0 rgb(0 0 0 / .25); }
+.lcd-swatches .bars { width: 100%; height: 12px; background: repeating-linear-gradient(90deg, var(--ink) 0 5px, transparent 5px 8px) left / 64% 100% no-repeat,
+  repeating-linear-gradient(90deg, rgb(var(--ink-rgb) / .13) 0 5px, transparent 5px 8px); }
+dialog#options #osec-colours .lcd-swatches button.sw[aria-checked=true] { outline: 3px solid var(--fg); outline-offset: 3px; }
+/* the glass itself: brightness and saturation move the theme's glass colour (the ink stays), dirt scales the faded patches,
+   the dark top edge and the vignette, grain the pixel grid. 100% is the stock look */
+.lcd-look { display: grid; grid-template-columns: repeat(2, max-content); gap: 10px 48px; align-items: center; justify-content: start; margin-top: 18px; }
+html.fit dialog#options .lcd-look .sld { grid-template-columns: 96px 220px 48px; margin: 0; font-size: var(--fs-m); }
+html.fit dialog#options .lcd-look .sld output { font-size: var(--fs-m); }
+#lcd-look-reset { justify-self: start; }

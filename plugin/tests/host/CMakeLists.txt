@@ -1,0 +1,12 @@
+# A small VST3 host for testing the plug-in on Linux: loads it, plays it from a fake DAW transport, opens its screen.
+cmake_minimum_required(VERSION 3.22)
+project(TB303TestHost VERSION 1.0.0 LANGUAGES C CXX)
+set(CMAKE_CXX_STANDARD 17)
+include(FetchContent)
+FetchContent_Declare(juce GIT_REPOSITORY https://github.com/juce-framework/JUCE.git GIT_TAG 8.0.12 GIT_SHALLOW TRUE)
+FetchContent_MakeAvailable(juce)
+juce_add_console_app(tbhost PRODUCT_NAME tbhost)
+juce_generate_juce_header(tbhost)
+target_sources(tbhost PRIVATE host.cpp)
+target_compile_definitions(tbhost PRIVATE JUCE_PLUGINHOST_VST3=1 JUCE_MODAL_LOOPS_PERMITTED=1 JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+target_link_libraries(tbhost PRIVATE ${CMAKE_DL_LIBS} juce::juce_audio_processors juce::juce_audio_utils juce::juce_gui_extra)

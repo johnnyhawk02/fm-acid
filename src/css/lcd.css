@@ -1,0 +1,637 @@
+/* LCD glass (v45, the look of Johnny's SH-101 project): the whole instrument is one pane of glass in a bezel.
+   Colours and type come from the tokens in base.css; this file draws the glass and turns every control into ink on glass. */
+.main { position: relative; color: var(--ink); text-shadow: var(--shadow); border: 0; border-radius: 0; padding: 0 16px 16px;
+  background-color: var(--glass);
+  background-image: linear-gradient(170deg, rgb(255 255 255 / .14), rgb(255 255 255 / 0) 38%, rgb(0 0 0 / .05)),
+    repeating-linear-gradient(0deg, rgb(0 0 0 / calc(.03 * var(--grain))) 0 1px, transparent 1px 3px), repeating-linear-gradient(90deg, rgb(0 0 0 / calc(.03 * var(--grain))) 0 1px, transparent 1px 3px),
+    radial-gradient(60% 30% at 10% 100%, rgb(var(--hl1-rgb) / .55), rgb(var(--hl1-rgb) / 0) 70%),
+    radial-gradient(50% 28% at 90% 102%, rgb(var(--hl2-rgb) / .4), rgb(var(--hl2-rgb) / 0) 70%),
+    radial-gradient(38% 20% at 70% 30%, rgb(var(--dk1-rgb) / calc(.14 * var(--dirt))), rgb(var(--dk1-rgb) / 0) 70%),
+    linear-gradient(180deg, rgb(var(--dk2-rgb) / calc(.2 * var(--dirt))) 0%, rgb(var(--dk2-rgb) / 0) 22%),
+    radial-gradient(130% 100% at 50% 60%, rgb(0 0 0 / 0) 60%, rgb(var(--dk3-rgb) / calc(.28 * var(--dirt))) 100%);
+  box-shadow: inset 0 6px 14px rgb(0 0 0 / .35), inset -4px 0 10px rgb(0 0 0 / .15), 0 18px 40px rgb(0 0 0 / .5); }
+body { padding-block: 20px 40px; font-size: 17px; line-height: 1.2; }
+:focus-visible, button:focus-visible, select:focus-visible, input:focus-visible, .knob:focus-visible { outline: 2px dashed var(--ink); outline-offset: 2px; }
+::selection { background: var(--ink); color: var(--glass); }
+
+/* top bar: part of the glass, parted from the rest by a rule */
+.top { position: relative; margin: 0 -16px; background: transparent; border-bottom: 1px solid var(--line); }
+.sq-msg, .fn-menu, .pm-pop { background: var(--glass); color: var(--ink); border: 2px solid var(--ink); border-radius: 4px; box-shadow: 0 10px 30px rgb(0 0 0 / .45); text-shadow: none; }
+
+/* buttons, fields: outlined in ink, inverted when on */
+button, select, input[type=text] { background: transparent; color: var(--ink); border: 2px solid var(--ink); border-radius: 3px; text-shadow: var(--shadow); text-transform: lowercase; }
+input[type=text] { text-transform: none; background: var(--tint); }
+button:hover:not(:disabled) { background: var(--tint); }
+button:active:not(:disabled) { background: var(--ink); color: var(--glass); text-shadow: none; }
+select option { background: var(--glass); color: var(--ink); }
+.icon svg, .gear svg { fill: var(--ink); }
+.gear { border-color: transparent; }
+.play[aria-pressed=true], .onoff[aria-pressed=true], .seg button[aria-pressed=true], .seg button[aria-checked=true],
+.mtabs button[aria-selected=true], .otabs button[aria-selected=true], #ptabs button[aria-selected=true],
+.lex-progs button[aria-checked=true], .pm .pm-i[aria-selected=true], .pm .pm-favf[aria-pressed=true] {
+  background: var(--ink); color: var(--glass); text-shadow: none; }
+.play[aria-pressed=true] svg { fill: var(--glass); }
+.seg { border: 2px solid var(--ink); border-radius: 3px; }
+.seg button { border: 0; border-right: 1px solid var(--rulec); border-radius: 0; text-shadow: var(--shadow); }
+.seg button:last-child { border-right: 0; }
+.switch { background: transparent; border: 2px solid var(--ink); }
+.switch .thumb { background: var(--ink); border-radius: 2px; top: 1px; }
+.switch[aria-checked=true] { background: var(--ink); }
+.switch[aria-checked=true] .thumb { background: var(--glass); }
+.label, .tname { text-transform: lowercase; letter-spacing: 0; }
+
+/* dials (Johnny's reference, in the orange palette): separate wedge segments lit up to the value, ghost where unlit, the
+   readout above and the label below; no pointer line and no centre number */
+.knob svg { overflow: visible; }
+.knob svg .trk { fill: var(--ghost); stroke: none; }
+.knob svg .arc { fill: var(--ink); stroke: none; filter: drop-shadow(1.5px 1.5px 0 rgb(var(--ink-rgb) / .17)); }
+.kn .val, .md .val { order: -2; }
+.kn .name, .md .mname, .pk .ref { order: 1; }
+.pk .val { order: -2; }
+.wave-kn .name, .parts-kn .name { order: -3; } /* the waveform and components cells keep their titles on top */
+.wave-kn .val { order: 1; }
+.knob:focus-visible { outline: 2px dashed var(--ink); outline-offset: 2px; }
+::selection { background: var(--ink); color: var(--glass); }
+
+/* dials: a solid ring, ghost where unlit and ink up to the pointer, and a pointer from the centre to the ring */
+.knob svg { overflow: visible; }
+.knob svg .trk, .knob svg .arc { stroke-width: 7; stroke-linecap: butt; }
+.knob svg .trk { stroke: var(--ghost); }
+.knob svg .arc { fill: var(--ink); stroke: none !important; filter: drop-shadow(2px 2px 0 rgb(var(--ink-rgb) / .17)); }
+.knob svg .ptr { stroke: var(--ink); stroke-width: 4; stroke-linecap: butt; }
+.knob:focus-visible { outline-offset: 4px; border-radius: 4px; }
+.pk.fixed .knob { opacity: .35; }
+.kn .name, .md .mname, .fxname { text-transform: lowercase; }
+.kn .val, .md .val { min-height: 1.1em; }
+
+/* devices: no grey boxes, just a lowercase heading over an ink rule */
+.dev, .main > .pane { background: transparent; border: 0; border-radius: 0; }
+.main > .pane::before { display: none; }
+.main > .pane { padding-top: 14px; }
+.dev::before { left: 16px; right: 16px; }
+.dev::before, .main > .pane::before { background: transparent; color: var(--ink); border-bottom: 1px solid var(--line); border-radius: 0; text-transform: lowercase; padding-left: 0; font-size: 21px; }
+.dev::after, .main > .pane::after { display: none; }
+.dev { border-bottom: 1px solid var(--line); margin: 0 -16px; padding-left: 16px; padding-right: 16px; }
+.mtabs { margin: 10px -16px -11px; padding: 0 16px; border-bottom: 2px solid var(--ink); gap: 6px; }
+.mtabs button { background: transparent; border: 2px solid var(--ink); border-bottom: 0; border-radius: 4px 4px 0 0; color: var(--ink); text-transform: lowercase; text-shadow: var(--shadow); }
+.fxb, .blk-lex { border-color: var(--line); }
+
+/* sequencer: ink cells on glass */
+.seq { background: transparent; border: 2px solid var(--ink); text-shadow: none; }
+.seq > * { border-right-color: rgb(var(--ink-rgb) / .25); border-bottom-color: rgb(var(--ink-rgb) / .25); color: var(--ink); }
+.seq .rh { background: transparent; border-right: 2px solid var(--ink); text-transform: lowercase; }
+.seq .bar { border-right-color: rgb(var(--ink-rgb) / .6); }
+.seq .gap { border-bottom: 2px solid rgb(var(--ink-rgb) / .6); }
+.seq .hd { background: transparent; }
+.seq .hd.cur { background: var(--ink); color: var(--glass); }
+.seq .cell.on { background: var(--ink); box-shadow: none; }
+.seq .cell.on.cur { box-shadow: inset 0 0 0 2px var(--glass); }
+.seq [data-t=slide].on, .seq [data-t=accent].on { background: repeating-linear-gradient(90deg, var(--ink) 0 3px, transparent 3px 5px); }
+.seq .end { border-right: 3px solid var(--ink); }
+.sq-bank .slots button.used:not([aria-pressed=true]) { background: var(--ghost); }
+.sq-bank .slots button[data-ch]:not([data-ch=""])::after { background: var(--ink); color: var(--glass); }
+.sq-bank .slots button.playing { outline: 2px dashed var(--ink); outline-offset: 2px; }
+.bpm-read output { background: transparent; border: 2px solid var(--ink); border-radius: 4px; }
+
+/* options sheet: a second pane of glass */
+dialog#options { background: var(--glass); color: var(--ink); border: 6px solid var(--bezel); border-radius: 12px; text-shadow: var(--shadow); }
+.opt-head { background: transparent; border-bottom: 2px solid var(--ink); }
+.otabs button { background: transparent; border: 2px solid var(--ink); border-bottom: 0; text-transform: lowercase; color: var(--ink); }
+canvas { background: transparent; border: 2px solid var(--ink); }
+.dot, .pk.mod::after { background: var(--ink); border-radius: 0; }
+
+/* sliders (Options › Monitor): a segmented ink bar with a solid ink cap */
+input[type=range] { -webkit-appearance: none; appearance: none; height: 22px; margin: 0; background: none; cursor: pointer; touch-action: none; accent-color: var(--ink); }
+input[type=range]::-webkit-slider-runnable-track { height: 10px; border: 2px solid var(--ink); border-radius: 2px; background: repeating-linear-gradient(90deg, var(--ghost) 0 3px, transparent 3px 6px); }
+input[type=range]::-moz-range-track { height: 6px; border: 2px solid var(--ink); border-radius: 2px; background: repeating-linear-gradient(90deg, var(--ghost) 0 3px, transparent 3px 6px); }
+input[type=range]::-moz-range-progress { height: 6px; background: repeating-linear-gradient(90deg, var(--ink) 0 3px, transparent 3px 6px); }
+input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 20px; margin-top: -7px; background: var(--ink); border: 0; border-radius: 2px; box-shadow: var(--shadow); }
+input[type=range]::-moz-range-thumb { width: 12px; height: 20px; background: var(--ink); border: 0; border-radius: 2px; }
+input[type=checkbox] { accent-color: var(--ink); }
+
+/* waveform switch: an LCD toggle, the lit block slides across */
+.switch { border-radius: 3px; }
+.switch .thumb { border-radius: 1px; box-shadow: none; }
+/* steppers: the value reads like a segment display between two ink keys */
+
+/* step grid as in the Shyoy: square ink blocks, no rounding; slides and accents solid like notes */
+.seq > * { border-radius: 0; text-shadow: none; }
+.seq button:hover:not(:disabled) { background: var(--tint2); }
+.seq .cell.on, .seq [data-t=slide].on, .seq [data-t=accent].on { background: var(--ink); }
+.seq .rh.blk, .seq .blk { background: var(--tint); }
+/* waveform switch: always a light (glass) square sliding on a black ink track, whichever side it is on (Johnny) */
+.switch, .switch[aria-checked=true], button.switch:hover:not(:disabled), button.switch:active:not(:disabled) { background: var(--ink); border-color: var(--ink); }
+.switch .thumb, .switch[aria-checked=true] .thumb { background: var(--glass); }
+
+/* ---- v63: the Elixir Synth screen treatment, in orange: black bezel on the dark case, a faded-patch veil over the glass,
+   a drop shadow behind buttons and bars, and uppercase spaced button labels ---- */
+:root { --dirt: 0; --grain: 1; --panel-rgb: 247 150 47; --ink-rgb: 28 10 0; --shade-rgb: 110 45 0; --light-rgb: 255 226 170;
+  --hl1-rgb: 255 228 175; --hl2-rgb: 255 222 170; --dk1-rgb: 70 28 5; --dk2-rgb: 60 22 4; --dk3-rgb: 45 15 0; }
+html { background: #0b0c0a radial-gradient(120% 80% at 50% 0%, #2a2d28, #161815) fixed; }
+.main { border: 5px solid #0b0c0a; border-radius: 10px;
+  box-shadow: inset 0 6px 16px rgb(0 0 0 / .36), inset -8px 8px 18px rgb(0 0 0 / .2), inset 0 0 0 1px rgb(255 255 255 / .1), 0 1px 0 rgb(255 255 255 / .07), 0 18px 40px rgb(0 0 0 / .5); }
+.main::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: 5;
+  background: radial-gradient(34% 17% at 76% 24%, rgb(var(--panel-rgb) / calc(.42 * var(--dirt))), rgb(var(--panel-rgb) / 0) 100%),
+    radial-gradient(22% 12% at 16% 66%, rgb(var(--panel-rgb) / calc(.38 * var(--dirt))), rgb(var(--panel-rgb) / 0) 100%),
+    radial-gradient(14% 9% at 58% 83%, rgb(var(--panel-rgb) / calc(.3 * var(--dirt))), rgb(var(--panel-rgb) / 0) 100%),
+    linear-gradient(90deg, rgb(var(--panel-rgb) / 0) 88%, rgb(var(--panel-rgb) / calc(.22 * var(--dirt))) 97%, rgb(var(--panel-rgb) / calc(.1 * var(--dirt)))); }
+/* no glow round the lit segments (Johnny, 2026-11-05: Glow fixed at 0, slider removed; "it's not really LCD any more") */
+.main, .main button, .main .label, .main output { text-shadow: none; }
+.main button:not(.seg button):not(.tabs button), .main .seg { box-shadow: 2px 2.2px 0 rgb(var(--shade-rgb) / .14); }
+.main button:not(.mtabs button) { text-transform: uppercase; letter-spacing: .06em; }
+.main .seq .cell.on, .main input[type=range]::-webkit-slider-thumb { filter: drop-shadow(2px 2.2px 0 rgb(var(--shade-rgb) / .17)); }
+.main button:active:not(:disabled), .main button[aria-pressed="true"], .main button[aria-selected="true"] { text-shadow: none; }
+/* fit-to-window (see fit.js): a 1000px screen scaled as a whole, centred on the dark case, nothing scrolls */
+html.fit, html.fit body { height: 100dvh; overflow: hidden; }
+html.fit body { padding: 0; position: relative; }
+html.fit .main { position: absolute; left: 50%; top: 50%; width: 1000px; max-width: none; margin: 0; transform: translate(-50%, -50%) scale(var(--k, 1)); }
+html.fit .sq-row { gap: 8px 14px; } html.fit .sld { grid-template-columns: 58px 72px 34px; gap: 6px; }
+
+/* v65: sliders as segmented bar graphs (like the faders in Johnny's SH-101 screen): a row of segments, lit up to the value over a ghost of the rest */
+.main input[type=range] { --f: 0; height: 22px; }
+.main input[type=range]::-webkit-slider-runnable-track { height: 16px; margin: 0; border: 0; border-radius: 0; cursor: ew-resize;
+  background: repeating-linear-gradient(90deg, var(--ink) 0 5px, transparent 5px 8px) left / round(down, calc(var(--f) * 100%), 8px) 100% no-repeat,
+    repeating-linear-gradient(90deg, var(--ghost) 0 5px, transparent 5px 8px); filter: drop-shadow(2px 2.2px 0 rgb(var(--shade-rgb) / .17)); }
+.main input[type=range]::-moz-range-track { height: 16px; border: 0; border-radius: 0; cursor: ew-resize;
+  background: repeating-linear-gradient(90deg, var(--ink) 0 5px, transparent 5px 8px) left / round(down, calc(var(--f) * 100%), 8px) 100% no-repeat,
+    repeating-linear-gradient(90deg, var(--ghost) 0 5px, transparent 5px 8px); }
+.main input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 0; height: 0; margin: 0; background: none; box-shadow: none; filter: none; }
+.main input[type=range]::-moz-range-thumb { width: 0; height: 0; border: 0; background: none; }
+.main input[type=range]:focus-visible { outline: 2px dashed var(--ink); outline-offset: 3px; }
+/* every page the same size: the pages stack in one cell (the hidden ones keep their space, unseen), so the screen is as tall as the tallest and never jumps */
+html.fit .main > .pane { grid-row: 4; grid-column: 1; min-height: 0; overflow: auto; }
+html.fit .main > .pane[hidden] { display: var(--pane-d, block) !important; visibility: hidden; pointer-events: none; }
+.fxpane { --pane-d: grid; }
+
+/* ---- design pass (Nov 2026): one fixed 1000 x 647 screen (MacBook Pro shape), one type scale, one control height ----
+   type: 14px small print (dial readouts and names, row labels, notes), 16px controls, 18px headings
+   controls in the pages: 26px tall, 2px ink outline, uppercase spaced labels; tabs and headings stay lowercase
+   spacing: 6px between controls in a row, 8px between rows, 16px screen margin */
+:root { --fs-s: 14px; --fs-m: 16px; --fs-l: 18px; --ctl-h: 26px; --row-h: 13px; }
+
+/* dials: crisp wedges only. The ghost track used to carry a 7-unit ghost stroke (a soft halo that filled the gaps
+   between segments) and the lit wedges a drop shadow; both gone, so every edge is sharp at any scale */
+.knob svg { shape-rendering: geometricPrecision; }
+.knob svg .trk, .main .knob svg .trk { fill: var(--ghost); stroke: none !important; filter: none; }
+.knob svg .arc, .main .knob svg .arc { fill: var(--ink); stroke: none !important; filter: none; }
+
+/* the screen */
+html.fit .main { width: 1000px; height: 647px; padding: 0 16px 12px; gap: 8px; grid-template-rows: auto auto auto minmax(0, 1fr); align-content: stretch; }
+html.fit .main > .pane { padding: 12px 16px 0; overflow: hidden; }
+html.fit .top { padding: 8px 16px; gap: 10px 12px; min-height: 0; }
+html.fit .top button, html.fit .top .bpm-read output, html.fit .pm .pm-btn { height: 30px; }
+html.fit .dev { padding: 10px 16px 8px; }
+/* no 'tb-303 voice' title or rule over the dials (Johnny) */
+.dev::before { display: none !important; }
+html.fit .mtabs { margin: 0 -16px -8px; }
+html.fit .mtabs button { height: var(--ctl-h); padding: 0 14px; font-size: var(--fs-m); }
+
+/* one size for small print and one for controls, everywhere */
+html.fit .kn .val, html.fit .md .val, html.fit .kn .name, html.fit .md .mname, html.fit .trim .tname, html.fit .trim .tval,
+html.fit .label, html.fit .md .mdesc, html.fit .sq-row > .rlab { font-size: var(--fs-s); }
+html.fit .sld, html.fit .sld output, html.fit .fxname, html.fit .lex-lcd { font-size: var(--fs-m); }
+html.fit .pane button:not(.seq button):not(.lex-progs button):not(.nudge button), html.fit .fxh .seg button { height: var(--ctl-h); padding: 0 10px; font-size: var(--fs-m); line-height: 1; }
+html.fit .pane .seg button { min-width: 30px; }
+
+/* sequencer: pattern and edit rows above the roll, shape and generate rows below; one label column */
+html.fit .sq-body { gap: 6px; }
+html.fit .sq-row { flex-wrap: nowrap; gap: 6px; min-height: var(--ctl-h); }
+html.fit .sq-row > .rlab { width: 72px; color: var(--mute); }
+html.fit .sq-row > .rlab-in { width: auto; margin-left: 22px; margin-right: 4px; }
+html.fit .sq-row .acts { margin-left: 0; gap: 6px; }
+html.fit .sq-row .acts + .acts, html.fit .sq-row .slots + .acts, html.fit .sq-row .chain-read + .acts { margin-left: 16px; }
+html.fit .sq-bank .slots button { height: calc(var(--ctl-h) - 4px); min-width: 32px; padding: 0; }
+html.fit .sld { grid-template-columns: 64px 84px 36px; gap: 6px; margin-right: 12px; }
+html.fit .sq-side .sld:last-child { margin-right: 0; }
+html.fit .seqwrap { display: grid; grid-template-columns: minmax(0, 1fr) 24px; gap: 4px; overflow: visible; }
+html.fit .seq { grid-auto-rows: var(--row-h); font-size: 13px; }
+/* nudge arrows, beside the octave lanes and the note rows: rows line up with the roll's (2px outline, then the step row) */
+.nudge { display: grid; grid-template-rows: 2px repeat(19, var(--row-h, 16px)); align-content: start; }
+.nudge button { min-width: 0; padding: 0; margin: 1px 0; font-size: 10px; line-height: 1; letter-spacing: 0; text-shadow: none; box-shadow: none !important; }
+.nu-oct-up { grid-row: 3 / 5; } .nu-oct-dn { grid-row: 5 / 7; }
+.nu-key-up { grid-row: 7 / 13; } .nu-key-dn { grid-row: 13 / 19; }
+
+/* effects: Folder, Drive, delay and Compactor in one row over the reverb slot */
+html.fit .fxpane { --knob: 40px; grid-template-columns: auto auto auto minmax(0, 1fr); gap: 14px 0; }
+html.fit .fxpane .fxb:not(.blk-lex) { --kn-w: 52px; padding: 0 12px; }
+html.fit .fxpane .fxb:first-child { padding-left: 0; }
+html.fit .fxpane .fxb:nth-child(4) { padding-right: 0; }
+html.fit .fxknobs { flex-wrap: nowrap; gap: 6px; }
+html.fit .fxknobs .kn { width: var(--kn-w); }
+html.fit .fxb { gap: 8px; }
+html.fit .fxh { height: 30px; flex-wrap: nowrap; gap: 10px; }
+html.fit .fxsub { display: none; }
+html.fit .blk-lex { --kn-w: 64px; padding-top: 12px; gap: 8px; }
+html.fit .lex-progs button { height: 38px; padding: 0 4px; font-size: 13px; line-height: 1.1; }
+html.fit .lex-progs button b { font-size: var(--fs-m); line-height: 1.1; }
+html.fit .lex-note { max-width: none; margin: 0; font-size: var(--fs-s); line-height: 1.25; }
+
+/* mods: two even rows */
+html.fit .mods { gap: 16px 10px; padding-top: 4px; }
+
+/* the Options sheet: the same glass treatment as the screen, a fixed size so its tabs never resize it, scaled with the screen */
+html.fit dialog#options { width: 960px; height: 600px; max-width: none; max-height: none; inset: auto; left: 50%; top: 50%; margin: 0; transform: translate(-50%, -50%) scale(var(--k, 1)); }
+dialog#options, dialog#options button, dialog#options .label, dialog#options output { text-shadow: none; }
+dialog#options button:not(.otabs button):not(#ptabs button):not(.xbtn) { text-transform: uppercase; letter-spacing: .06em; height: var(--ctl-h); padding: 0 10px; font-size: var(--fs-m); line-height: 1; box-shadow: 2px 2.2px 0 rgb(var(--shade-rgb) / .14); }
+dialog#options .otabs button, dialog#options #ptabs button { height: var(--ctl-h); padding: 0 12px; font-size: var(--fs-m); }
+dialog#options .opt-head h2 { font-size: var(--fs-l); }
+dialog#options .kn .val, dialog#options .pk .val, dialog#options .pk .ref, dialog#options .readouts, dialog#options .hint { font-size: var(--fs-s); }
+dialog#options .notes { font-size: var(--fs-m); }
+dialog#options input[type=range] { --f: 0; height: 22px; }
+dialog#options input[type=range]::-webkit-slider-runnable-track { height: 16px; margin: 0; border: 0; border-radius: 0; cursor: ew-resize;
+  background: repeating-linear-gradient(90deg, var(--ink) 0 5px, transparent 5px 8px) left / round(down, calc(var(--f) * 100%), 8px) 100% no-repeat,
+    repeating-linear-gradient(90deg, var(--ghost) 0 5px, transparent 5px 8px); }
+dialog#options input[type=range]::-moz-range-track { height: 16px; border: 0; border-radius: 0;
+  background: repeating-linear-gradient(90deg, var(--ink) 0 5px, transparent 5px 8px) left / round(down, calc(var(--f) * 100%), 8px) 100% no-repeat,
+    repeating-linear-gradient(90deg, var(--ghost) 0 5px, transparent 5px 8px); }
+dialog#options input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 0; height: 0; margin: 0; background: none; box-shadow: none; }
+dialog#options input[type=range]::-moz-range-thumb { width: 0; height: 0; border: 0; background: none; }
+
+/* popovers (Preset, Functions): the same controls as the pages */
+.pm-foot button, .pm-foot input[type=text] { height: 30px; font-size: var(--fs-m); }
+.pm-foot button { padding: 0 10px; line-height: 1; }
+
+/* dial cells stack from the top, so a long description never pushes its dial out of line with the row */
+.kn, .md, .pk { align-content: start; }
+html.fit .fxh .seg button { height: 22px; }
+/* the voice panel: the components buttons a size down so the panel is no taller than its dials */
+html.fit .parts-kn .mini { height: 22px; padding: 0 4px; font-size: var(--fs-s); }
+html.fit .panel { row-gap: 0; }
+/* names lowercase everywhere, like every other dial name */
+.trim .tname { text-transform: lowercase; letter-spacing: 0; }
+.wave-kn .val { text-transform: lowercase; }
+/* waveform switch: a saw glyph at the saw end, a square glyph at the square end, drawn in ink like the segments */
+.wave-row { display: flex; align-items: center; gap: 6px; margin: 14px 0 12px; }
+.wave-row .switch { margin: 0; }
+.wglyph { width: 18px; height: 11px; fill: none; stroke: var(--ink); stroke-width: 2; stroke-linejoin: miter; stroke-linecap: square; overflow: visible; }
+/* mods: the two rows of dials share the page's height, rather than leaving a gap at the bottom */
+html.fit .mods { gap: 30px 10px; padding-top: 10px; }
+/* the Options sheet: the screen's fine pixel grid too, and a lowercase title like every other heading */
+dialog#options { background-image: repeating-linear-gradient(0deg, rgb(0 0 0 / calc(.03 * var(--grain))) 0 1px, transparent 1px 3px), repeating-linear-gradient(90deg, rgb(0 0 0 / calc(.03 * var(--grain))) 0 1px, transparent 1px 3px); }
+dialog#options .opt-head h2 { text-transform: lowercase; }
+/* touch: no pinch-zoom or page scroll (the screen already fills the window); scroll areas inside still scroll */
+html.fit { touch-action: pan-x pan-y; overscroll-behavior: none; }
+html.fit .pm-pop { max-height: 460px; }
+/* tuning: 12 upright segmented faders, one per note; lit from the zero line up or down to the offset, a ghost of the rest.
+   Readout above and name below, like the dials; a row of temperaments above and the root below, like the sequencer's rows */
+.tupane { --pane-d: flex; display: flex; flex-direction: column; gap: 8px; }
+.tupane[hidden] { display: none; }
+html.fit .tu-top .acts.tu-end { margin-left: auto; }
+#tu-sys button[aria-pressed=true] { background: var(--ink); color: var(--glass); text-shadow: none; }
+.tu-faders { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); align-items: center; padding: 4px 0; }
+.tu-col { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.tu-col .val, .tu-col .mname { font-size: var(--fs-s); line-height: 1.2; color: var(--ink); text-transform: lowercase; font-variant-numeric: tabular-nums; }
+.tu-col .val { cursor: pointer; min-width: 5ch; text-align: center; }
+.tu-bar { display: flex; flex-direction: column; gap: 2px; width: 34px; padding: 2px; cursor: ns-resize; touch-action: none; outline-offset: 3px; }
+.tu-bar i { display: block; height: 4px; background: var(--ghost); }
+.tu-bar i.on { background: var(--ink); filter: drop-shadow(2px 2.2px 0 rgb(var(--shade-rgb) / .17)); }
+.tu-bar i[data-s="0"] { height: 2px; margin: 1px -4px; background: var(--ink); }
+.tu-bar:focus-visible { outline: 2px dashed var(--ink); }
+.tu-foot .tu-note { margin-left: auto; font-size: var(--fs-s); white-space: nowrap; }
+#tu-root { flex: none; }
+html.fit #tu-root button { height: calc(var(--ctl-h) - 4px); min-width: 32px; padding: 0; text-transform: lowercase; }
+
+/* no status line or message boxes (Johnny, v107: messages were distracting); the old message spots stay hidden */
+.sq-msg, .pm-foot .hint[role=status] { display: none !important; }
+html.fit .main { grid-template-columns: minmax(0, 1fr); }
+
+/* Randomise and Tools menus at the right of the pattern row (Johnny): same look as Functions, a key on the right of each item */
+.sq-row .rmenu { margin-left: auto; }
+.sq-row .rmenu + .rmenu { margin-left: 0; }
+.rmenu > button::after { content: " ▾"; }
+.rmenu .fn-menu { min-width: 230px; padding: 4px 0 6px; }
+.rmenu .fn-menu button { display: flex; justify-content: space-between; align-items: center; gap: 18px; text-transform: none; letter-spacing: 0; padding: 0 12px 0 22px; }
+html.fit .pane .rmenu .fn-menu button { height: 24px; padding: 0 12px 0 22px; font-size: var(--fs-m); box-shadow: none; }
+.rmenu .mh { padding: 6px 12px 2px; font-size: var(--fs-s, 13px); color: var(--mute); text-transform: lowercase; }
+.rmenu kbd { font: var(--fs-s, 13px)/1 var(--font-mono); color: var(--mute); }
+.rmenu .fn-menu button:not(:disabled):hover kbd, .rmenu .fn-menu button:focus-visible kbd { color: var(--glass); }
+/* FX type menus (Drive pedal, Reverb type): the same dropdown, opening down-left from the unit's header, a tick on the current one */
+.tmenu > button { min-width: 0; padding: 2px 10px; font: var(--fs-m, 14.5px) var(--font-body); white-space: nowrap; }
+.tmenu .fn-menu { left: 0; right: auto; min-width: 180px; }
+.tmenu .fn-menu button { position: relative; justify-content: flex-start; }
+#pane-fx .tmenu .fn-menu button { height: 21px; padding: 0 14px 0 28px; } /* 21px so nine programs fit below the reverb row */
+.tmenu .fn-menu button[aria-checked=true]::before { content: "✓"; position: absolute; left: 9px; }
+/* the randomise row went into the menu, so the roll takes its height; the generate row is just its two sliders now */
+#pane-seq { --row-h: 14.5px; }
+
+/* ---- a lighter glass (Johnny, Nov 2026): the same look as before, just a paler orange backlight, halfway between the original #f7962f and #fcab55 ---- */
+:root { --glass: #faa142; --panel-rgb: 250 161 66; }
+
+/* ---- consistency pass (Johnny, Nov 2026): every page, menu and the Options sheet on the same sizes ----
+   controls 16px (--fs-m) everywhere, the top bar included; a segmented group is as tall as a button (26px outside);
+   every dropdown item (Functions, Randomise, Tools, the FX type and program menus, the preset list) one height,
+   one indent and no button shadow; headings lowercase in the Options sheet like the FX units */
+:root { --menu-h: 22px; }
+html.fit .pm .pm-btn, .pm-opt, .pm .pm-q, .pm-foot input[type=text] { font-size: var(--fs-m); }
+.top .fn > button::after { font-size: inherit; }
+html.fit .pane .seg button:not(.seq button):not(.lex-progs button):not(.nudge button), html.fit .fxh .seg button, html.fit #tu-root button { height: calc(var(--ctl-h) - 4px); }
+html.fit .fn-menu button, html.fit .pane .fn-menu button:not(.seq button):not(.lex-progs button):not(.nudge button), html.fit #pane-fx .tmenu .fn-menu button {
+  height: var(--menu-h); padding: 0 12px 0 22px; font-size: var(--fs-m); line-height: 1; box-shadow: none !important; }
+.fn-menu { padding: 4px 0 6px; }
+.fn-menu button { display: flex; justify-content: space-between; align-items: center; gap: 18px; }
+.tmenu .fn-menu button[aria-checked=true]::before { left: 8px; }
+.fn-menu kbd { font: var(--fs-s)/1 var(--font-mono); color: var(--mute); text-transform: uppercase; }
+.fn-menu button:not(:disabled):hover kbd, .fn-menu button:focus-visible kbd { color: var(--glass); }
+.pm-pop .pm-foot input[type=text] { flex: 1 1 260px; }
+html.fit .pm .pm-i { height: var(--menu-h); line-height: var(--menu-h); padding-top: 0; padding-bottom: 0; font-size: var(--fs-m); box-shadow: none !important; }
+html.fit .pm .pm-star { height: var(--menu-h); font-size: var(--fs-m); box-shadow: none !important; }
+.pm .pm-g, .pm-sum, .pm-path { font-size: var(--fs-s); }
+/* Options: the circuit block tabs outlined like the section tabs above them; Monitor's headings like the FX unit names */
+dialog#options #ptabs button { border-width: 2px; border-bottom-width: 0; }
+#midi-status { margin: 0; }
+#midi-map dd { text-transform: lowercase; }
+
+/* the cross under the roll (Johnny): replaces the octave and semitone arrows that ran down the right of the roll, so the
+   roll takes the whole width. The shape and generate rows stack on the left, the cross sits at the right of the two */
+html.fit .seqwrap { grid-template-columns: minmax(0, 1fr); gap: 0; }
+.sq-foot { display: flex; align-items: center; gap: 16px; min-width: 0; }
+.sq-foot-rows { flex: 1; min-width: 0; display: grid; gap: 6px; }
+.dpad { display: grid; grid-template-columns: repeat(3, 32px); grid-template-rows: repeat(3, 19px); gap: 1px 2px; flex: none; }
+.dpad button { min-width: 0; height: auto; margin: 0; padding: 0; font-size: 11px; line-height: 1; letter-spacing: 0; }
+.dp-up { grid-area: 1 / 2; } .dp-lt { grid-area: 2 / 1; } .dp-rt { grid-area: 2 / 3; } .dp-dn { grid-area: 3 / 2; }
+html.fit .sq-foot .sld { grid-template-columns: 64px 68px 36px; }
+
+/* preset list: unticked favourite is a faint outline, ticked stays solid; X deletes (click twice) */
+.pm .pm-star[aria-pressed=false] { color: var(--ink); opacity: .28; }
+.pm .pm-row:hover .pm-star[aria-pressed=false] { opacity: .55; }
+.pm .pm-star[aria-pressed=false]:hover { opacity: 1; }
+.pm .pm-del { flex: none; min-width: 26px; padding: 0 6px; border: 0; background: transparent; color: var(--ink); opacity: .45; font: var(--fs-m)/1 var(--font-body); box-shadow: none !important; }
+html.fit .pm .pm-del { height: var(--menu-h); }
+.pm .pm-row:hover .pm-del { opacity: .75; }
+.pm .pm-del:hover { opacity: 1; }
+.pm .pm-del[aria-pressed=true] { opacity: 1; background: var(--ink); color: var(--glass); font-size: var(--fs-s); text-transform: lowercase; }
+.pm .pm-restore { display: block; width: 100%; border: 0; background: transparent; text-align: left; padding: 0 12px; padding-left: calc(12px + var(--d, 0) * 14px); height: var(--menu-h, 22px); font-size: var(--fs-s); color: var(--mute); text-transform: lowercase; box-shadow: none !important; }
+.pm .pm-restore:hover { color: var(--ink); background: var(--tint); }
+
+/* FX routing (Johnny): a small block diagram under the reverb, the order switches at its right. Blocks are ink outlines,
+   filled when the unit is on; click one to switch it */
+.blk-route { grid-column: 1 / -1; display: flex; align-items: center; gap: 16px; padding: 8px 0 0; border-left: 0; border-top: 1px solid var(--rulec); }
+.route-dia { width: 560px; height: 60px; flex: none; overflow: visible; font-family: var(--font-body); }
+.route-dia .rw { fill: none; stroke: var(--ink); stroke-width: 1.5; }
+.route-dia .ra, .route-dia .rn { fill: var(--ink); stroke: none; }
+.route-dia .rs-sum { fill: none; stroke: var(--ink); stroke-width: 1.5; }
+.route-dia .rt { fill: var(--ink); font-size: 15px; }
+.route-dia .rs { fill: var(--mute); font-size: 13px; text-anchor: middle; }
+.route-dia .rb rect { fill: none; stroke: var(--ink); stroke-width: 1.5; stroke-dasharray: 3 2; }
+.route-dia .rb text { fill: var(--mute); font-size: 15px; text-anchor: middle; }
+.route-dia .rb.on rect { fill: var(--ink); stroke-dasharray: none; }
+.route-dia .rb.on text { fill: var(--glass); }
+.route-dia [data-u] { cursor: pointer; }
+.route-dia [data-u]:hover rect { stroke-width: 2.5; }
+.route-dia [data-u]:focus-visible { outline: none; }
+.route-dia [data-u]:focus-visible rect { stroke-width: 2.5; stroke-dasharray: none; }
+.route-ctl { display: grid; gap: 6px; justify-items: start; margin-left: auto; }
+html.fit .blk-route .seg button { height: calc(var(--ctl-h) - 6px); padding: 0 10px; font-size: var(--fs-m); white-space: nowrap; }
+.route-ctl .seg { width: 100%; } .route-ctl .seg button { flex: 1; }
+
+/* FX page tidy (Johnny): one dial pitch on every unit (58px dial + 6px gap), so the top row fills the width and the
+   reverb dials sit on the same spacing; the routing strip starts at the left edge like the On buttons above it, and
+   its switches are the same height as every other control */
+html.fit .fxpane { --kn-w: 58px; gap: 12px 0; }
+html.fit .fxpane .fxb:not(.blk-lex):not(.blk-route) { --kn-w: 58px; }
+html.fit .blk-lex { --kn-w: 58px; padding-top: 10px; }
+html.fit .fxknobs { gap: 6px; }
+html.fit .fxpane .fxb.blk-route { padding: 10px 0 0; gap: 0; }
+html.fit .blk-route .seg button { height: calc(var(--ctl-h) - 4px); }
+.route-ctl { gap: 8px; }
+
+/* Sequencer foot (Johnny): no row labels; a long Length slider on its own line, then Step len, Shift and Transpose */
+html.fit .sq-row.sq-side { flex-wrap: wrap; row-gap: 6px; }
+html.fit .sq-foot .sld.len { flex: 1 0 100%; grid-template-columns: 64px minmax(0, 1fr) 36px; margin-right: 0; }
+
+/* FX page, second pass (Johnny): no "routing" label, the diagram starts at the page edge; the rows share the spare
+   height so the page does not end in a gap */
+html.fit .fxpane { gap: 26px 0; }
+html.fit .fxpane .fxb.blk-route { padding-top: 14px; }
+html.fit .blk-lex { padding-top: 14px; }
+
+/* ---- LCD colours (Johnny, Nov 2026: Options › Colours). Each theme swaps only the colour tokens, so the glass, haze,
+   glow and shadows are drawn the same way in every colour. Orange (#faa142 glass, brown-black ink) stays the default and is
+   exactly the look above. data-lcd goes on <html>; a swatch in the Colours tab carries it too, so it previews its own glass and ink ---- */
+[data-lcd=orange] { --glass: #faa142; --ink: #1c0a00; --panel-rgb: 250 161 66; --ink-rgb: 28 10 0; --shade-rgb: 110 45 0; --light-rgb: 255 226 170;
+  --hl1-rgb: 255 228 175; --hl2-rgb: 255 222 170; --dk1-rgb: 70 28 5; --dk2-rgb: 60 22 4; --dk3-rgb: 45 15 0; }
+[data-lcd=amber] { --glass: #f4c24a; --ink: #1e1500; --panel-rgb: 244 194 74; --ink-rgb: 30 21 0; --shade-rgb: 110 78 0; --light-rgb: 255 240 185;
+  --hl1-rgb: 255 241 190; --hl2-rgb: 255 236 180; --dk1-rgb: 72 50 5; --dk2-rgb: 62 42 4; --dk3-rgb: 46 30 0; }
+[data-lcd=lime] { --glass: #b3c46a; --ink: #0f1a05; --panel-rgb: 179 196 106; --ink-rgb: 15 26 5; --shade-rgb: 52 70 10; --light-rgb: 232 244 190;
+  --hl1-rgb: 234 246 195; --hl2-rgb: 228 242 185; --dk1-rgb: 34 50 8; --dk2-rgb: 30 44 6; --dk3-rgb: 20 32 2; }
+[data-lcd=blue] { --glass: #7bb6e2; --ink: #03112a; --panel-rgb: 123 182 226; --ink-rgb: 3 17 42; --shade-rgb: 12 50 100; --light-rgb: 215 236 255;
+  --hl1-rgb: 218 238 255; --hl2-rgb: 210 232 252; --dk1-rgb: 10 34 72; --dk2-rgb: 8 30 62; --dk3-rgb: 4 20 46; }
+[data-lcd=red] { --glass: #f26b52; --ink: #220403; --panel-rgb: 242 107 82; --ink-rgb: 34 4 3; --shade-rgb: 112 22 8; --light-rgb: 255 214 196;
+  --hl1-rgb: 255 216 198; --hl2-rgb: 255 208 190; --dk1-rgb: 80 16 6; --dk2-rgb: 68 14 5; --dk3-rgb: 50 8 2; }
+[data-lcd=grey] { --glass: #d3d6cc; --ink: #121410; --panel-rgb: 211 214 204; --ink-rgb: 18 20 16; --shade-rgb: 64 68 58; --light-rgb: 248 250 242;
+  --hl1-rgb: 250 252 245; --hl2-rgb: 246 248 240; --dk1-rgb: 44 46 40; --dk2-rgb: 38 40 34; --dk3-rgb: 28 30 24; }
+
+/* the reverb and the flanger share the second row; the flanger's mode switch is its title */
+.fx-row2 { grid-column: 1 / -1; display: flex; align-items: stretch; border-top: 1px solid var(--rulec); }
+.fx-row2 .blk-lex { flex: 1; min-width: 0; border-top: 0; }
+html.fit .fxpane .fx-row2 #fx-flg { flex: none; padding: 14px 0 0 12px; }
+.kn.dim { opacity: .4; }
+
+/* readouts keep their width as the value changes (Johnny: controls moved when a value went from one to two figures) */
+.trim .tval { min-width: 8ch; text-align: center; }
+.top .bpm-read output#bpm-val { width: calc(3ch + 20px); min-width: 0; font-variant-numeric: tabular-nums; }
+.kn .val, .md .val, .sld output, .fx output, output { font-variant-numeric: tabular-nums; }
+
+/* ---- Grey + colour mode (Johnny, Nov 2026: Options › Colours › Mode; the default since v124). Mono is every theme above,
+   one ink on one glass. Grey + colour puts the grey glass underneath and uses the chosen theme as the one accent colour,
+   deepened so it reads on grey like a printed colour filter on a real LCD (grey itself means no accent): the FX On buttons and
+   routing blocks, the selected page tab, the play light, the pattern in use and the step being played.
+   Every dial and slider, the slide and accent blocks, all text and lines stay in the grey theme's ink (Johnny). data-lcdmode=colour goes on <html>; the
+   page head puts it there unless tb303.lcdMode says mono ---- */
+:root[data-lcdmode=colour] { --glass: #d3d6cc; --ink: #121410; --panel-rgb: 211 214 204; --ink-rgb: 18 20 16; --shade-rgb: 64 68 58; --light-rgb: 248 250 242;
+  --hl1-rgb: 250 252 245; --hl2-rgb: 246 248 240; --dk1-rgb: 44 46 40; --dk2-rgb: 38 40 34; --dk3-rgb: 28 30 24; --accent: #d0600a; }
+:root[data-lcdmode=colour][data-lcd=amber] { --accent: #b58300; }
+:root[data-lcdmode=colour][data-lcd=lime] { --accent: #4e8a16; }
+:root[data-lcdmode=colour][data-lcd=blue] { --accent: #2a63ae; }
+:root[data-lcdmode=colour][data-lcd=red] { --accent: #c2352a; }
+:root[data-lcdmode=colour][data-lcd=grey] { --accent: var(--ink); }
+[data-lcdmode=colour] .fxb .onoff[aria-pressed=true], [data-lcdmode=colour] .mtabs button[aria-selected=true],
+[data-lcdmode=colour] .play[aria-pressed=true] { background: var(--accent); border-color: var(--accent); color: var(--glass); }
+[data-lcdmode=colour] .route-dia .rb.on[data-u] rect { stroke: var(--accent); }
+[data-lcdmode=colour] .route-dia .rb.on[data-u] rect { fill: var(--accent); }
+[data-lcdmode=colour] .slots button[aria-pressed=true], [data-lcdmode=colour] .seq .hd.cur { background: var(--accent); }
+/* Options › Colours: the Mono / Grey + colour switch over the swatches (the swatch picks the glass in Mono, the accent in Grey + colour) */
+.lcd-mode { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; font-size: var(--fs-m); text-transform: lowercase; }
+html.fit dialog#options .lcd-mode .seg button { height: var(--ctl-h); padding: 0 14px; font-size: var(--fs-m); }
+
+/* Options › About: Install app at the top (moved from the Functions menu, which is gone) */
+.opt-install { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.opt-install #opt-install-msg { color: var(--mute); }
+
+/* Inside the VST3 plug-in the DAW's transport and tempo run it: no Play button, Tempo dial or Install app */
+html[data-plugin] #play, html[data-plugin] .top .bpm, html[data-plugin] .opt-install { display: none; }
+
+/* Screen text is not selectable (a drag or double-click on a label must not highlight it), except where you type. */
+html { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+input, textarea, [contenteditable="true"] { -webkit-user-select: text; user-select: text; }
+
+/* No focus box: pressing a key command (a, space, 1-8...) must not draw a box round the control last clicked. */
+*:focus, *:focus-visible { outline: none !important; }
+.route-dia .rb[data-u]:focus-visible rect { stroke-width: 1.5; stroke-dasharray: 3 2; }
+.route-dia .rb.on[data-u]:focus-visible rect { stroke-dasharray: none; }
+/* No bezel round the screen, in the app as in the plug-in (Johnny: "it just takes up space"). The 1000x647 screen still scales as a
+   whole (fit.js) and touches the window edges; any space left over when the window is not the screen's shape is plain near-black, so the
+   glass shows exactly the shape of the plug-in window (Johnny). To bring the case back, delete this block and set pad in fit.js back. */
+html.fit { background: #0b0c0a; }
+html.fit .main { border: 0; border-radius: 0; box-shadow: none; }
+
+/* Proper tabs (Johnny: "more like proper tabs"): the page tabs and the Options tabs are folder tabs on a 2px rule.
+   The open tab is clear glass, a little taller, and has no rule under it, so it joins the page below; a bar runs across its top
+   (ink in both modes: Johnny, no spot colour on the tabs). The others sit back: shorter, shaded, fainter labels, closed off by the rule.
+   Page tabs: the rule is drawn in pieces (a lead-in, each closed tab's bottom edge and the gap before it, a run to the right edge) so the
+   open tab shows the real glass under it. Options tabs: the head's rule stays and the open tab covers it with a strip of glass. */
+html.fit .main .mtabs { display: flex; align-items: flex-end; gap: 0; padding: 0; border-bottom: 0; overflow: visible; }
+html.fit .main .mtabs::before { content: ""; flex: 0 0 16px; border-bottom: 2px solid var(--ink); }
+html.fit .main .mtabs::after { content: ""; flex: 1 1 auto; border-bottom: 2px solid var(--ink); }
+.otabs { overflow: visible; align-items: flex-end; gap: 4px; }
+html.fit .main .mtabs button, html.fit dialog#options .otabs button { position: relative; box-sizing: border-box; margin: 0; border: 2px solid var(--ink); border-radius: 5px 5px 0 0;
+  height: calc(var(--ctl-h) - 2px); line-height: 1; background: var(--tint); color: var(--mute); box-shadow: none; }
+html.fit .main .mtabs button + button { margin-left: 4px; }
+html.fit .main .mtabs button { border-bottom: 0; padding-bottom: 2px; }
+html.fit .main .mtabs button::before { content: ""; position: absolute; left: -6px; right: -2px; bottom: 0; height: 2px; background: var(--ink); }
+html.fit dialog#options .otabs button { border-bottom: 0; }
+html.fit .main .mtabs button:hover:not([aria-selected=true]), html.fit dialog#options .otabs button:hover:not([aria-selected=true]) { background: var(--tint2); color: var(--ink); }
+html.fit .main .mtabs button[aria-selected=true], html.fit dialog#options .otabs button[aria-selected=true] {
+  height: calc(var(--ctl-h) + 4px); background: transparent; color: var(--ink); border-color: var(--ink); border-bottom: 0; box-shadow: inset 0 3px 0 var(--ink); }
+html.fit .main .mtabs button[aria-selected=true]::before { right: auto; width: 4px; }
+html.fit dialog#options .otabs button[aria-selected=true] { margin-bottom: -2px; padding-bottom: 2px; }
+html.fit dialog#options .otabs button[aria-selected=true]::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--glass); }
+html.fit .main .mtabs button[aria-selected=true]:active, html.fit dialog#options .otabs button[aria-selected=true]:active { background: transparent; color: var(--ink); }
+
+/* Gate ▾ (Johnny, was the Step len slider): the note length moved out of its slider into a menu beside Tools; a tick on the current value */
+.gmenu .fn-menu { min-width: 120px; }
+.gmenu .fn-menu button { position: relative; justify-content: flex-start; }
+.gmenu .fn-menu button[aria-checked=true]::before { content: "✓"; position: absolute; left: 8px; }
+#o-gate { display: inline-block; min-width: 4ch; text-align: right; }
+
+/* ---- Spacing pass (Johnny, Nov 2026: "go through every page and ensure good spacing and even look") ----
+   one 16px margin down both sides of the screen (top bar, dials, tabs and every page line up on it, the pages used to sit in a
+   further 16px); every page starts 12px under the tab rule and ends 12px above the bottom edge; the spare height is shared out
+   evenly on each page rather than left as a gap at the bottom. Spacing tokens: --gap-s 6px between controls, --gap-m 12px
+   between rows and from the edges, --gap-l between the FX rows either side of their rules. */
+:root { --gap-s: 6px; --gap-m: 12px; --gap-l: 28px; }
+html.fit .main > .pane { padding: var(--gap-m) 0 0; }
+
+/* top bar: the BPM readout's label centred on the controls like Preset and the version (it sat on the baseline, 2px low);
+   the gear is a borderless icon, so no shadow edge either */
+html.fit .top .bpm-read { align-items: center; }
+html.fit .top .gear { box-shadow: none; }
+
+/* voice panel: Components as a dial cell like the rest: the trim's value on the value row, its dial centred on the dial row, its
+   name on one line on the name row; the heading over the three buttons, which fill the dial height in three even steps */
+html.fit .parts-kn { display: grid; grid-template-columns: 54px minmax(0, 1fr); grid-template-rows: 17px repeat(3, 21px); gap: 3px 6px; align-items: stretch; }
+html.fit .parts-kn .name { grid-column: 2; grid-row: 1; align-self: center; text-align: center; }
+html.fit .parts-kn .trim { grid-column: 1; grid-row: 1 / -1; grid-template-rows: auto minmax(0, 1fr) auto; align-items: center; gap: 0; }
+html.fit .parts-kn .trim .tval { order: -1; min-width: 0; line-height: 17px; }
+html.fit .parts-kn .trim .tname { max-width: none; white-space: nowrap; letter-spacing: 0; line-height: 17px; font-size: var(--fs-s); }
+html.fit .parts-kn .mini { grid-column: 2; height: 21px; }
+html.fit .wave-kn .val { margin-top: 2px; }
+
+/* Sequencer: pattern row, roll, then Length and the cross, the same gap between each; the roll's rows take the spare height */
+#pane-seq { --row-h: 16.4px; }
+html.fit .sq-body { gap: 10px; }
+
+/* Mods: the first row 12px under the tabs like every other page, then the same space between the rows as under the second */
+html.fit .mods { padding-top: 0; row-gap: 64px; align-content: start; }
+
+/* FX: the same space above and below each rule (it was 26px above and 14px below) */
+html.fit .fxpane { row-gap: var(--gap-l); }
+html.fit .blk-lex, html.fit .fxpane .fx-row2 #fx-flg, html.fit .fxpane .fxb.blk-route { padding-top: var(--gap-l); }
+
+/* Options sheet: one gap between the sections of a tab (it was 16, 30 or 34px); the look sliders run the full width in two
+   columns with Reset under them on the same rhythm */
+dialog#options #osec-midi, dialog#options #osec-colours, dialog#options #osec-about { gap: 24px; }
+dialog#options #osec-colours > *, dialog#options #osec-midi > *, dialog#options #osec-about > * { margin-top: 0; margin-bottom: 0; }
+html.fit dialog#options .lcd-look { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 48px; justify-content: stretch; }
+html.fit dialog#options .lcd-look .sld { grid-template-columns: 96px minmax(0, 1fr) 48px; }
+
+/* Preset menu foot: two even rows. Name, dice, Save, Delete; then Import file, Export all, Export favourites, and Sound only at the right */
+.pm-pop .pm-foot::before { content: ""; order: 5; flex: 0 0 100%; height: 0; margin-top: -6px; }
+.pm-pop .pm-foot #prj-name { order: 1; } .pm-pop .pm-foot #prj-roll { order: 2; } .pm-pop .pm-foot #prj-save { order: 3; } .pm-pop .pm-foot #prj-del { order: 4; }
+.pm-pop .pm-foot #prj-import { order: 6; } .pm-pop .pm-foot #prj-export { order: 7; } .pm-pop .pm-foot #prj-exfav { order: 8; }
+.pm-pop .pm-foot .pm-opt { order: 9; margin-left: auto; padding-right: 4px; }
+
+/* Tabs all one width (Johnny: "make the tabs the same width as each other"): every page tab as wide as the widest (Sequencer),
+   every Options tab as wide as the widest (Colours); labels centred */
+html.fit .main .mtabs button { flex: 0 0 104px; width: 104px; padding-left: 0; padding-right: 0; text-align: center; justify-content: center; }
+html.fit dialog#options .otabs button { flex: 0 0 96px; width: 96px; padding-left: 0; padding-right: 0; text-align: center; justify-content: center; }
+
+/* A dial's own step sequencer (ctlseq.js): long-press or right-click a dial. A card of glass over the dimmed screen, 560 wide
+   in the screen's own units (it scales with the screen, like Options). Head: name, On, the step being painted; then the four
+   pages, the 16 steps in two rows of 8 (the bar runs up or down from the middle line), the four bars, Randomise / kind / Done.
+   A dial with a sequencer switched on shows only the ink pointer outside its ring (no tag: Johnny, "the triangle is enough"). */
+.knob { position: relative; }
+.knob svg .hrd { fill: var(--ink); stroke: none; }
+dialog#cseq { box-sizing: border-box; width: 560px; max-width: none; max-height: none; padding: 16px; margin: 0; position: fixed; inset: auto; left: 50%; top: 50%;
+  transform: translate(-50%, -50%) scale(var(--k, 1)); background: var(--glass); color: var(--ink); border: 2px solid var(--ink); border-radius: 6px;
+  box-shadow: 0 10px 30px rgb(0 0 0 / .45); text-shadow: none; font-family: var(--font-body); overflow: visible;
+  background-image: repeating-linear-gradient(0deg, rgb(0 0 0 / calc(.03 * var(--grain))) 0 1px, transparent 1px 3px), repeating-linear-gradient(90deg, rgb(0 0 0 / calc(.03 * var(--grain))) 0 1px, transparent 1px 3px); }
+dialog#cseq[open] { display: grid; gap: 12px; }
+dialog#cseq::backdrop { background: rgb(0 0 0 / .45); }
+dialog#cseq button { height: var(--ctl-h); padding: 0 10px; font-size: var(--fs-m); line-height: 1; text-transform: uppercase; letter-spacing: .06em; box-shadow: 2px 2.2px 0 rgb(var(--shade-rgb) / .14); }
+dialog#cseq .cs-head { display: flex; align-items: center; gap: 12px; padding-bottom: 10px; border-bottom: 2px solid var(--ink); }
+dialog#cseq .cs-head h2 { margin: 0; font: var(--fs-l)/1 var(--font-body); text-transform: lowercase; }
+dialog#cseq .cs-head .onoff { min-width: 52px; }
+dialog#cseq .cs-val { margin-left: auto; font-size: var(--fs-m); font-variant-numeric: tabular-nums; white-space: pre; }
+dialog#cseq .cs-pages { display: flex; box-shadow: 2px 2.2px 0 rgb(var(--shade-rgb) / .14); }
+dialog#cseq .cs-pages button { flex: 1; height: calc(var(--ctl-h) - 4px); box-shadow: none; letter-spacing: 0; }
+dialog#cseq .cs-pages button[aria-selected=true] { background: var(--ink); color: var(--glass); }
+dialog#cseq .cs-pages button.past:not([aria-selected=true]) { color: rgb(var(--ink-rgb) / .4); }
+dialog#cseq .cs-pages button.now:not([aria-selected=true]) { text-decoration: underline 2px; text-underline-offset: 3px; }
+dialog#cseq .cs-steps { display: grid; grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(2, 92px); gap: 8px; touch-action: none; cursor: crosshair; user-select: none; }
+dialog#cseq .cs-step { position: relative; border: 2px solid var(--ink); border-radius: 2px;
+  background: linear-gradient(var(--ink), var(--ink)) center / 100% 1px no-repeat, var(--ghost); }
+dialog#cseq .cs-step::before { content: attr(data-n); position: absolute; left: 3px; top: 1px; font-size: var(--fs-s); line-height: 1; pointer-events: none; }
+dialog#cseq .cs-step .cs-bar { position: absolute; left: 6px; right: 6px; background: var(--ink);
+  top: calc(50% - max(var(--v, 0), 0) * 50%); height: max(2px, calc(max(var(--v, 0), -1 * var(--v, 0)) * 50%)); margin-top: -1px; }
+dialog#cseq .cs-step.off { opacity: .3; }
+dialog#cseq .cs-step.sel::before { background: var(--ink); color: var(--glass); padding: 0 2px; left: 1px; }
+dialog#cseq .cs-step.now { outline: 3px solid var(--accent, var(--ink)); outline-offset: 1px; }
+dialog#cseq .cs-steps:focus-visible { outline: 2px dashed var(--ink); outline-offset: 4px; }
+dialog#cseq .cs-bars { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 28px; }
+dialog#cseq .sld { grid-template-columns: 56px minmax(0, 1fr) 58px; gap: 8px; margin: 0; font-size: var(--fs-m); }
+dialog#cseq .sld output { font-size: var(--fs-m); text-align: right; }
+dialog#cseq input[type=range] { --f: 0; height: 22px; width: 100%; }
+dialog#cseq input[type=range]::-webkit-slider-runnable-track { height: 16px; margin: 0; border: 0; border-radius: 0; cursor: ew-resize;
+  background: repeating-linear-gradient(90deg, var(--ink) 0 5px, transparent 5px 8px) left / round(down, calc(var(--f) * 100%), 8px) 100% no-repeat,
+    repeating-linear-gradient(90deg, var(--ghost) 0 5px, transparent 5px 8px); }
+dialog#cseq input[type=range]::-moz-range-track { height: 16px; border: 0; border-radius: 0;
+  background: repeating-linear-gradient(90deg, var(--ink) 0 5px, transparent 5px 8px) left / round(down, calc(var(--f) * 100%), 8px) 100% no-repeat,
+    repeating-linear-gradient(90deg, var(--ghost) 0 5px, transparent 5px 8px); }
+dialog#cseq input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 0; height: 0; margin: 0; background: none; box-shadow: none; }
+dialog#cseq input[type=range]::-moz-range-thumb { width: 0; height: 0; border: 0; background: none; }
+dialog#cseq .cs-foot { display: flex; gap: 8px; padding-top: 12px; border-top: 2px solid var(--ink); }
+dialog#cseq .cs-foot #cseq-kind { min-width: 96px; text-transform: lowercase; letter-spacing: 0; }
+dialog#cseq .cs-foot #cseq-done { margin-left: auto; min-width: 80px; }
+
+/* value readouts never move their neighbours (Johnny, "labels cause controls to shift about when the value shown is too
+   wide"): readouts stay on one line (a wrap pushed the dial down a row, mostly while the fallback font shows before VT323
+   loads or offline) and any that changes width sits in a box sized for its widest value. A too-long one spills sideways
+   over empty glass instead of reflowing the row. */
+.kn .val, .md .val, .pk .val, .tu-col .val, .trim .tval, .sld output, .bpm-read output, #cseq-val, .wave-kn .val { white-space: nowrap; }
+/* dial cells: one column the width of the cell, the readout centred in it and free to overhang both sides, so a long
+   value can't widen the column and push the dial off centre */
+.kn:not(.parts-kn):not(.wave-kn), .md { grid-template-columns: minmax(0, 1fr); }
+.kn:not(.parts-kn):not(.wave-kn) > .val, .md > .val { display: flex; justify-content: center; justify-self: stretch; }
+/* the Gate button keeps room for "100%" */
+#o-gate { display: inline-grid; justify-items: end; min-width: 0; }
+#o-gate::after { content: "100%"; visibility: hidden; height: 0; overflow: hidden; }
+/* FX type and program menus: sized for their longest choice (fx.js drawTypeMenu stacks every name in one cell) */
+.tmenu .tm-w { display: inline-grid; justify-items: start; }
+.tmenu .tm-w > span { grid-area: 1 / 1; white-space: nowrap; }
+.tmenu .tm-w > span + span { visibility: hidden; }
+
+/* Seq on/off: a small switch by Play (the plug-in shows it too). Off, the sequencer stops and MIDI notes play the synth,
+   so Play is dimmed; the Tempo dial stays for the tempo-synced delay. On is inked like the FX On buttons. */
+.top .seqbtn { height: 20px !important; padding: 0 6px; font: var(--fs-s)/1 var(--font-body); }
+html:not([data-plugin]) .top .seqbtn { margin-left: -6px; }
+.top .seqbtn[aria-pressed=true] { background: var(--ink); color: var(--glass); text-shadow: none; }
+[data-lcdmode=colour] .top .seqbtn[aria-pressed=true] { background: var(--accent); border-color: var(--accent); }
+html[data-seqoff] .top #play { opacity: .35; }
+
+/* Density dial (Johnny: "needs a density knob"): name, small dial and value in the sequencer foot, left of the cross */
+.sq-dens { display: flex; align-items: center; gap: 8px; flex: none; }
+.sq-dens .knob { width: 34px; height: 34px; }
+.sq-dens .dname { text-transform: lowercase; }
+.sq-dens output { min-width: 4ch; text-align: right; }
+html.fit .sq-dens, html.fit .sq-dens output { font-size: var(--fs-m); }

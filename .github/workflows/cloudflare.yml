@@ -1,0 +1,31 @@
+name: Deploy to Cloudflare Pages
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: cloudflare-pages
+  cancel-in-progress: true
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      # build the page from src/ here, so what goes live always matches the source
+      - run: node build.js
+      # Only the app itself goes live, so the source stays private with the repo.
+      - run: mkdir dist && cp -R index.html sw.js manifest.webmanifest icons irs fonts dist/
+      # stamp the version shown in the top bar: v<deploy number>, with commit and time in its tooltip
+      - run: |
+          sed -i "s/__BUILD_VERSION__/v${{ github.run_number }}/; s/__BUILD_SHA__/${GITHUB_SHA::7}/; s/__BUILD_DATE__/$(date -u '+%Y-%m-%d %H:%M UTC')/" dist/index.html
+          grep -c "v${{ github.run_number }}" dist/index.html
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: '4'
+          command: pages deploy dist --project-name tb303-circuit-model --branch main --commit-dirty=true

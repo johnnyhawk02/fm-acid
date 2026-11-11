@@ -1,0 +1,2 @@
+# LF everywhere, also in Windows checkouts (the plug-in build reads the page as text)
+* text=auto eol=lf

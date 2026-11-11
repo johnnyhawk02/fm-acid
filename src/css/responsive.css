@@ -1,0 +1,11 @@
+/* Every device gets the desktop screen: the fixed 1000 x 647 pane scaled to fit (fit.js), letterboxed on the dark case.
+   No separate phone layout (Johnny, Nov 2026). In portrait on a touch screen it is small, so a quiet hint says to turn it. */
+.rotate { display: none; }
+@media (orientation: portrait) and (pointer: coarse) {
+  .rotate { position: fixed; left: 0; right: 0; bottom: max(16px, env(safe-area-inset-bottom, 0px)); z-index: 1; display: flex; justify-content: center; align-items: center; gap: 8px;
+    pointer-events: none; color: rgb(var(--panel-rgb) / .55); font: 16px var(--font-body); text-shadow: none; background: none; border: 0; }
+  .rotate svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; }
+  .rotate p { margin: 0; }
+  .rotate small { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
